@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Proctored Secure Examination Portal</title>
+    <meta name="description" content="A secure, real-time AI-proctored online examination client featuring webcam, microphone, screen share, and behavior tracking.">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Style Sheets — use relative path so it works on live servers -->
+    <link rel="stylesheet" href="src/style.css">
+    
+    <!-- TensorFlow.js and COCO-SSD CDN Links -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd" defer></script>
+</head>
+<body>
+    <!-- ===== MOBILE BLOCKED OVERLAY (shown before app loads on phones) ===== -->
+    <div id="mobile-block-overlay">
+        <div class="mobile-block-card">
+            <div class="mobile-block-icon">🖥️</div>
+            <h1>Desktop Only</h1>
+            <p>This examination must be completed on a <strong>desktop or laptop computer</strong>.</p>
+            <p>Mobile phones and tablets are <strong>not permitted</strong> for this exam.</p>
+            <div class="mobile-block-badge">⚠️ Access Denied on Mobile</div>
+        </div>
+    </div>
+
+    <div id="app-container">
+        
+        <!-- ================= SETUP / SYSTEM VERIFICATION VIEW ================= -->
+        <main id="setup-view" class="view-panel active">
+            <header class="setup-header">
+                <div class="header-brand">
+                    <div class="brand-icon">🛡️</div>
+                    <div>
+                        <h1>Secure Examination Portal</h1>
+                        <p>Complete all system checks before your exam begins.</p>
+                    </div>
+                </div>
+            </header>
+
+            <div class="setup-grid">
+                <!-- Checklist and Permission Controls -->
+                <section class="setup-card checklist-card">
+                    <h2>Proctoring Prerequisites</h2>
+                    <ul class="checklist" id="permissions-checklist">
+                        <li id="check-model" class="check-item pending">
+                            <span class="status-icon">⏳</span>
+                            <span class="status-text">AI Proctoring Models loading...</span>
+                        </li>
+                        <li id="check-camera" class="check-item pending">
+                            <span class="status-icon">❌</span>
+                            <span class="status-text">Webcam access required</span>
+                        </li>
+                        <li id="check-mic" class="check-item pending">
+                            <span class="status-icon">❌</span>
+                            <span class="status-text">Microphone access required</span>
+                        </li>
+                        <li id="check-screen" class="check-item pending">
+                            <span class="status-icon">❌</span>
+                            <span class="status-text">Screen sharing authorization required</span>
+                        </li>
+                        <li id="check-fullscreen" class="check-item pending">
+                            <span class="status-icon">❌</span>
+                            <span class="status-text">Fullscreen mode permission</span>
+                        </li>
+                    </ul>
+
+                    <div class="setup-actions">
+                        <button id="btn-request-perms" class="btn btn-primary">Grant &amp; Verify Permissions</button>
+                        <button id="btn-start-exam" class="btn btn-success" disabled>Start Secure Exam</button>
+                    </div>
+                </section>
+
+                <!-- Hardware Previews -->
+                <section class="setup-card preview-card">
+                    <h2>Live Hardware Feed</h2>
+                    <div class="camera-preview-container">
+                        <video id="setup-webcam" autoplay playsinline muted></video>
+                        <div class="feed-overlay">Webcam Preview</div>
+                    </div>
+                    <div class="audio-preview-container">
+                        <label for="setup-mic-meter">Mic Activity Level</label>
+                        <div class="meter-bar-bg">
+                            <div id="setup-mic-meter" class="meter-bar-fill" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+
+        <!-- ================= SECURE EXAM INTERFACE VIEW ================= -->
+        <main id="exam-view" class="view-panel">
+            <!-- Sidebar: AI Proctor Status & Live Feed -->
+            <aside class="exam-sidebar">
+                <div class="sidebar-block monitor-block">
+                    <h3>AI Live Proctoring</h3>
+                    <div class="video-proctor-container">
+                        <video id="exam-webcam" autoplay playsinline muted></video>
+                        <canvas id="exam-canvas"></canvas>
+                        <div class="proctor-badge" id="proctor-indicator">
+                            <span class="pulse-dot"></span>
+                            <span id="proctor-status-text">AI ACTIVE</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sidebar-block score-block">
+                    <h3>Violation Metrics</h3>
+                    <div class="violation-gauge-container">
+                        <div class="violation-label">
+                            <span>Warnings Issued</span>
+                            <span id="violation-count">0 / 3</span>
+                        </div>
+                        <div class="violation-track">
+                            <div id="violation-bar" class="violation-fill" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="audio-gauge-container">
+                        <div class="audio-label">
+                            <span>Audio Level</span>
+                            <span id="audio-db">0%</span>
+                        </div>
+                        <div class="audio-track">
+                            <div id="audio-bar" class="audio-fill" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sidebar-block logs-block">
+                    <h3>Security Logs</h3>
+                    <div id="proctor-logs" class="logs-container">
+                        <div class="log-entry system">Proctoring engine initialized.</div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Main Panel: Exam Content -->
+            <section class="exam-main-content">
+                <header class="exam-header">
+                    <div class="exam-title-area">
+                        <h2>Software Engineer Screening Exam</h2>
+                        <span class="security-level-badge">🔒 STRICT AI SECURED MODE</span>
+                    </div>
+                    <div class="exam-timer-area">
+                        <span class="timer-label">Time Remaining</span>
+                        <span id="exam-timer" class="timer-clock">45:00</span>
+                    </div>
+                </header>
+
+                <!-- Active Question Container -->
+                <article class="exam-question-card">
+                    <div class="question-header">
+                        <span id="question-number" class="question-badge">Question 1 of 5</span>
+                        <span id="question-type" class="question-type-badge">Multiple Choice</span>
+                    </div>
+                    <div class="question-body">
+                        <p id="question-text" class="question-text">Loading question...</p>
+                        <div id="question-options" class="question-options">
+                            <!-- JS will inject options here -->
+                        </div>
+                    </div>
+                </article>
+
+                <footer class="exam-footer">
+                    <button id="btn-prev" class="btn btn-secondary" disabled>Previous</button>
+                    <button id="btn-skip" class="btn btn-secondary">Skip</button>
+                    <button id="btn-next" class="btn btn-primary">Next &amp; Save</button>
+                    <button id="btn-submit" class="btn btn-success" style="display: none;">Submit Exam</button>
+                </footer>
+            </section>
+
+            <!-- Navigation Drawer (Right Side) -->
+            <nav class="exam-nav-drawer">
+                <h3>Question Index</h3>
+                <div class="question-grid" id="question-grid">
+                    <!-- JS will generate grid items -->
+                </div>
+                <div class="nav-legend">
+                    <div class="legend-item"><span class="legend-dot current"></span> Current</div>
+                    <div class="legend-item"><span class="legend-dot answered"></span> Answered</div>
+                    <div class="legend-item"><span class="legend-dot skipped"></span> Skipped</div>
+                    <div class="legend-item"><span class="legend-dot unvisited"></span> Unvisited</div>
+                </div>
+            </nav>
+        </main>
+
+        <!-- ================= SYSTEM BLOCKED / LOCKOUT VIEW ================= -->
+        <main id="blocked-view" class="view-panel error-view">
+            <div class="lockout-card">
+                <div class="lockout-header">
+                    <div class="warning-icon">⚠️</div>
+                    <h1>ACCESS REVOKED</h1>
+                    <p class="lockout-subtitle">Security Proctoring Violation Triggered</p>
+                </div>
+                
+                <div class="lockout-body">
+                    <p class="error-msg">
+                        Suspicious behavior was repeatedly detected or a critical exam boundary was breached. 
+                        As a result, your exam session has been locked and automatically submitted.
+                    </p>
+                    
+                    <div class="violation-report">
+                        <h3>Detailed Violation Log</h3>
+                        <ul id="block-violation-list" class="violation-list">
+                            <!-- JS will inject proctor infractions here -->
+                        </ul>
+                    </div>
+
+                    <div class="lockout-alert">
+                        This session is locked. Your IP address, system properties, webcam snapshots, and screen share records have been logged and sent to the administrator dashboard.
+                    </div>
+                </div>
+
+                <div class="lockout-footer">
+                    <span class="session-id-label">Session Hash ID: <span id="session-hash">N/A</span></span>
+                </div>
+            </div>
+        </main>
+
+        <!-- ================= EXAM COMPLETED SUCCESS VIEW ================= -->
+        <main id="success-view" class="view-panel success-view">
+            <div class="success-card">
+                <div class="success-icon">✓</div>
+                <h1>Exam Submitted</h1>
+                <p>Your examination session has been recorded and submitted successfully.</p>
+                
+                <div class="success-details">
+                    <p>The system verified integrity levels throughout the duration of your exam.</p>
+                    <div class="integrity-badge">Proctor Status: Passed with Integrity</div>
+                </div>
+                
+                <button id="btn-close-session" class="btn btn-primary" onclick="window.close()">Exit Examination Portal</button>
+            </div>
+        </main>
+
+    </div>
+
+    <!-- Main Controller Script -->
+    <script type="module" src="src/main.js"></script>
+</body>
+</html>
