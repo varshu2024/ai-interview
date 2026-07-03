@@ -4,12 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI-Proctored Secure Examination Portal</title>
-    <meta name="description" content="A secure, real-time AI-proctored online examination client featuring webcam, microphone, screen share, and behavior tracking.">
+    <meta name="description" content="A secure, real-time AI-proctored online examination client featuring webcam, microphone, screen share, gaze tracking, and behavior monitoring.">
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Style Sheets — use relative path so it works on live servers -->
+    <!-- Style Sheets -->
     <link rel="stylesheet" href="src/style.css">
     
     <!-- TensorFlow.js and COCO-SSD CDN Links -->
@@ -17,7 +17,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd" defer></script>
 </head>
 <body>
-    <!-- ===== MOBILE BLOCKED OVERLAY (shown before app loads on phones) ===== -->
+    <!-- ===== MOBILE BLOCKED OVERLAY ===== -->
     <div id="mobile-block-overlay">
         <div class="mobile-block-card">
             <div class="mobile-block-icon">🖥️</div>
@@ -29,7 +29,7 @@
     </div>
 
     <div id="app-container">
-        
+
         <!-- ================= SETUP / SYSTEM VERIFICATION VIEW ================= -->
         <main id="setup-view" class="view-panel active">
             <header class="setup-header">
@@ -106,6 +106,12 @@
                             <span id="proctor-status-text">AI ACTIVE</span>
                         </div>
                     </div>
+
+                    <!-- Gaze Tracking Indicator -->
+                    <div class="gaze-tracker-row">
+                        <div id="gaze-indicator" class="gaze-indicator gaze-center"></div>
+                        <span id="gaze-status" class="gaze-status-text">👁️ Looking at screen</span>
+                    </div>
                 </div>
 
                 <div class="sidebar-block score-block">
@@ -117,6 +123,21 @@
                         </div>
                         <div class="violation-track">
                             <div id="violation-bar" class="violation-fill" style="width: 0%"></div>
+                        </div>
+                        <!-- Strike dots -->
+                        <div class="strike-dots-row">
+                            <div class="strike-dot-item" id="strike-1">
+                                <div class="strike-circle">1</div>
+                                <span>Warning</span>
+                            </div>
+                            <div class="strike-dot-item" id="strike-2">
+                                <div class="strike-circle">2</div>
+                                <span>Alert</span>
+                            </div>
+                            <div class="strike-dot-item" id="strike-3">
+                                <div class="strike-circle">3</div>
+                                <span>Revoked</span>
+                            </div>
                         </div>
                     </div>
                     <div class="audio-gauge-container">
@@ -192,31 +213,41 @@
         <main id="blocked-view" class="view-panel error-view">
             <div class="lockout-card">
                 <div class="lockout-header">
-                    <div class="warning-icon">⚠️</div>
-                    <h1>ACCESS REVOKED</h1>
-                    <p class="lockout-subtitle">Security Proctoring Violation Triggered</p>
+                    <div class="warning-icon">🚫</div>
+                    <h1>Access Revoked</h1>
+                    <p class="lockout-subtitle">Your exam session has been terminated due to repeated integrity violations.</p>
                 </div>
-                
+
+                <!-- Final strike trigger -->
+                <div class="lockout-trigger-banner">
+                    <span class="trigger-label-icon">⚠️</span>
+                    <div class="trigger-text">
+                        <strong id="lockout-trigger-label">Security Violation</strong>
+                        <p id="lockout-trigger-msg">Suspicious behavior was detected.</p>
+                    </div>
+                </div>
+
                 <div class="lockout-body">
                     <p class="error-msg">
-                        Suspicious behavior was repeatedly detected or a critical exam boundary was breached. 
-                        As a result, your exam session has been locked and automatically submitted.
+                        You received <strong id="lockout-violation-count">multiple violations</strong> during your exam session.
+                        The exam is blocked after reaching the maximum allowed violations.
                     </p>
-                    
+
                     <div class="violation-report">
-                        <h3>Detailed Violation Log</h3>
+                        <h3>📋 Complete Violation Record</h3>
+                        <p class="violation-report-sub">Every detected incident is logged below with timestamps and type.</p>
                         <ul id="block-violation-list" class="violation-list">
                             <!-- JS will inject proctor infractions here -->
                         </ul>
                     </div>
 
                     <div class="lockout-alert">
-                        This session is locked. Your IP address, system properties, webcam snapshots, and screen share records have been logged and sent to the administrator dashboard.
+                        ⚠️ This session has been permanently locked. Your IP address, system metadata, webcam snapshots, and screen share recordings have been transmitted to the exam administrator.
                     </div>
                 </div>
 
                 <div class="lockout-footer">
-                    <span class="session-id-label">Session Hash ID: <span id="session-hash">N/A</span></span>
+                    <span class="session-id-label">Session ID: <span id="session-hash">N/A</span></span>
                 </div>
             </div>
         </main>
@@ -227,12 +258,17 @@
                 <div class="success-icon">✓</div>
                 <h1>Exam Submitted</h1>
                 <p>Your examination session has been recorded and submitted successfully.</p>
-                
+
                 <div class="success-details">
                     <p>The system verified integrity levels throughout the duration of your exam.</p>
                     <div class="integrity-badge">Proctor Status: Passed with Integrity</div>
+                    <div id="success-score-display" class="success-score-display">Your Score: calculating...</div>
+                    <div class="success-violation-note">
+                        Total warnings during session: <strong id="success-violation-count">0</strong>
+                    </div>
+                    <ul id="success-violation-summary" class="success-log-list"></ul>
                 </div>
-                
+
                 <button id="btn-close-session" class="btn btn-primary" onclick="window.close()">Exit Examination Portal</button>
             </div>
         </main>

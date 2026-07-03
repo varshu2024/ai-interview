@@ -1,0 +1,6 @@
+{
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/hr", "destination": "/hr/index.html" }
+  ]
+}

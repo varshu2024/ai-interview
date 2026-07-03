@@ -1,32 +1,75 @@
 import { questions as defaultQuestions } from './questions.js';
 import { ProctorEngine } from './proctor.js';
+import {
+    getAllStudents, upsertStudent, appendViolation, updateStudentStatus,
+    isBlocked, blockStudent, getBlockedIds, getQuestions,
+    generateSessionId, getMaxWarnings
+} from './hr-data.js';
 
-// Application State
+// ─── Session Identity ─────────────────────────────────────────────────────────
+let sessionId = generateSessionId();
+let studentName = 'Candidate';
+
+// ─── Application State ────────────────────────────────────────────────────────
 let activeQuestions = [];
 let currentQuestionIndex = 0;
-const answers = {}; // Maps questionIndex -> selectedOptionIndex (or text response)
+const answers = {};
 let warnings = 0;
-const maxWarnings = 3;
-let timeLeft = 2700; // 45 minutes in seconds
+let maxWarnings = getMaxWarnings(); // default 4, configurable from HR portal
+let timeLeft = 2700; // 45 minutes
 let timerInterval = null;
-const violationLogs = [];
+const violationLogs = []; // Stores all violation events with timestamps
+
+// Debounce map to avoid spamming the same violation type
+const violationCooldowns = {};
+const COOLDOWN_MS = {
+    tab_switch: 4000,
+    window_blur: 4000,
+    mouse_leave: 8000,
+    fullscreen_exit: 5000,
+    noise: 6000,
+    no_person: 6000,
+    multiple_people: 8000,
+    cell_phone: 6000,
+    gaze_away: 5000,
+    copy_paste: 3000,
+    devtools: 3000,
+    screenshot: 3000,
+    keyboard_block: 2000,
+    context_menu: 2000,
+};
+
+// Human-readable labels for violation types
+const VIOLATION_LABELS = {
+    tab_switch: '🔁 Tab Switch',
+    window_blur: '🖱️ Window Focus Lost',
+    mouse_leave: '↗️ Mouse Left Window',
+    fullscreen_exit: '⛶ Fullscreen Exited',
+    noise: '🔊 Loud Audio Detected',
+    no_person: '👤 Face Not Visible',
+    multiple_people: '👥 Multiple People',
+    cell_phone: '📱 Phone Detected',
+    gaze_away: '👁️ Eyes Off Screen',
+    copy_paste: '📋 Copy/Paste Blocked',
+    devtools: '🛠️ DevTools Attempt',
+    screenshot: '📸 Screenshot Blocked',
+    keyboard_block: '⌨️ Key Blocked',
+    context_menu: '🖱️ Right-Click Blocked',
+    screen_stopped: '🖥️ Screen Share Stopped',
+    webcam_transfer: '📷 Webcam Error',
+};
 
 // Load questions from local storage or fallback to defaults
 function loadActiveQuestions() {
-    const stored = localStorage.getItem('proctor_exam_questions');
-    if (stored) {
-        try {
-            activeQuestions = JSON.parse(stored);
-        } catch (e) {
-            console.error("Failed to parse stored questions, falling back to defaults.", e);
-            activeQuestions = JSON.parse(JSON.stringify(defaultQuestions));
-        }
+    const stored = getQuestions();
+    if (stored && Array.isArray(stored) && stored.length > 0) {
+        activeQuestions = JSON.parse(JSON.stringify(stored));
     } else {
         activeQuestions = JSON.parse(JSON.stringify(defaultQuestions));
     }
 }
 
-// DOM Elements
+// ─── DOM Elements ─────────────────────────────────────────────────────────────
 const views = {
     setup: document.getElementById('setup-view'),
     exam: document.getElementById('exam-view'),
@@ -66,7 +109,9 @@ const indicators = {
     proctorLogs: document.getElementById('proctor-logs'),
     timer: document.getElementById('exam-timer'),
     proctorStatus: document.getElementById('proctor-status-text'),
-    proctorDot: document.querySelector('.pulse-dot')
+    proctorDot: document.querySelector('.pulse-dot'),
+    gazeStatus: document.getElementById('gaze-status'),
+    gazeIndicator: document.getElementById('gaze-indicator')
 };
 
 const questionView = {
@@ -77,12 +122,84 @@ const questionView = {
     grid: document.getElementById('question-grid')
 };
 
-// State trackers for permissions
+// ─── Permission State ─────────────────────────────────────────────────────────
 let isModelReady = false;
 let isHardwareReady = false;
 let isScreenReady = false;
 
-// Instantiate the Proctor Engine
+// ─── Toast Notification System ───────────────────────────────────────────────
+let toastContainer = null;
+
+function ensureToastContainer() {
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.id = 'toast-container';
+        document.body.appendChild(toastContainer);
+    }
+    return toastContainer;
+}
+
+/**
+ * Show a non-disruptive toast notification
+ * @param {string} title - Short title
+ * @param {string} message - Full message
+ * @param {number} strikeNumber - Which strike this is (1, 2, or null)
+ * @param {string} severity - 'info' | 'warning' | 'danger'
+ */
+function showToast(title, message, strikeNumber, severity = 'warning') {
+    const container = ensureToastContainer();
+
+    const toast = document.createElement('div');
+    toast.className = `proctor-toast toast-${severity}`;
+
+    const strikeHtml = strikeNumber ? `
+        <div class="toast-strikes">
+            ${Array.from({length: maxWarnings}, (_, i) =>
+                `<span class="strike-dot ${i < strikeNumber ? 'filled' : ''}"></span>`
+            ).join('')}
+        </div>
+    ` : '';
+
+    const warningText = strikeNumber
+        ? `Strike ${strikeNumber} of ${maxWarnings}`
+        : '';
+
+    toast.innerHTML = `
+        <div class="toast-icon">${getViolationIcon(severity)}</div>
+        <div class="toast-content">
+            <div class="toast-header">
+                <span class="toast-title">${title}</span>
+                ${warningText ? `<span class="toast-strike-label">${warningText}</span>` : ''}
+            </div>
+            <p class="toast-message">${message}</p>
+            ${strikeHtml}
+            ${strikeNumber === maxWarnings - 1 ? '<p class="toast-final-warn">⚠️ One more violation = Access Revoked</p>' : ''}
+        </div>
+        <button class="toast-close" onclick="this.parentElement.remove()">✕</button>
+    `;
+
+    container.appendChild(toast);
+
+    // Animate in
+    requestAnimationFrame(() => {
+        toast.classList.add('toast-visible');
+    });
+
+    // Auto-dismiss after 6 seconds
+    setTimeout(() => {
+        toast.classList.remove('toast-visible');
+        toast.classList.add('toast-hiding');
+        setTimeout(() => toast.remove(), 400);
+    }, 6000);
+}
+
+function getViolationIcon(severity) {
+    if (severity === 'danger') return '🚫';
+    if (severity === 'warning') return '⚠️';
+    return 'ℹ️';
+}
+
+// ─── ProctorEngine Instance ───────────────────────────────────────────────────
 const proctor = new ProctorEngine({
     onModelLoaded: (success, errMsg) => {
         if (success) {
@@ -99,7 +216,6 @@ const proctor = new ProctorEngine({
         } else if (views.exam.classList.contains('active')) {
             indicators.audioDb.textContent = `${volumePercent}%`;
             indicators.audioBar.style.width = `${volumePercent}%`;
-            // Color feedback for levels
             if (volumePercent > 60) {
                 indicators.audioBar.style.backgroundColor = '#ef4444';
             } else if (volumePercent > 35) {
@@ -111,121 +227,166 @@ const proctor = new ProctorEngine({
     },
     onViolation: (type, message, severity) => {
         handleProctorViolation(type, message, severity);
+    },
+    onGazeUpdate: (gazeStatus, message) => {
+        updateGazeIndicator(gazeStatus);
     }
 });
 
-/**
- * Update the visual status of checklist elements
- */
+// ─── Gaze Indicator UI ────────────────────────────────────────────────────────
+function updateGazeIndicator(gazeStatus) {
+    if (!indicators.gazeStatus) return;
+
+    const statusMap = {
+        center: { label: '👁️ Looking at screen', cls: 'gaze-center' },
+        left: { label: '👁️ Looking left', cls: 'gaze-left' },
+        right: { label: '👁️ Looking right', cls: 'gaze-right' },
+        away: { label: '👁️ Face not detected', cls: 'gaze-away' },
+    };
+
+    const info = statusMap[gazeStatus] || statusMap.center;
+    indicators.gazeStatus.textContent = info.label;
+
+    if (indicators.gazeIndicator) {
+        indicators.gazeIndicator.className = `gaze-indicator ${info.cls}`;
+    }
+}
+
+// ─── Checklist UI Helper ──────────────────────────────────────────────────────
 function updateChecklistItem(item, status, text) {
     if (!item) return;
     item.className = `check-item ${status}`;
     const icon = item.querySelector('.status-icon');
     const label = item.querySelector('.status-text');
-    
-    if (status === 'success') {
-        icon.textContent = '✓';
-    } else if (status === 'failed') {
-        icon.textContent = '❌';
-    } else if (status === 'pending') {
-        icon.textContent = '⏳';
-    }
-    
+
+    if (status === 'success') icon.textContent = '✓';
+    else if (status === 'failed') icon.textContent = '❌';
+    else if (status === 'pending') icon.textContent = '⏳';
+
     if (text) label.textContent = text;
 }
 
-/**
- * Evaluate if Start Exam button should be enabled
- */
 function enableStartIfReady() {
     if (isModelReady && isHardwareReady && isScreenReady) {
         btns.startExam.disabled = false;
     }
 }
 
-/**
- * Handle proctoring warnings and violations
- */
+// ─── Core Violation Handler ───────────────────────────────────────────────────
 function handleProctorViolation(type, message, severity) {
-    const timestamp = new Date().toLocaleTimeString();
-    const logMessage = `[${timestamp}] [Warning] ${message}`;
-    
-    violationLogs.push({ time: timestamp, type, message, severity });
+    // Debounce repeated violations of same type
+    const cooldown = COOLDOWN_MS[type] || 3000;
+    const now = Date.now();
+    if (violationCooldowns[type] && now - violationCooldowns[type] < cooldown) {
+        return; // Still in cooldown, skip
+    }
+    violationCooldowns[type] = now;
 
+    const timestamp = new Date().toLocaleTimeString();
+
+    // Add to proctor sidebar log
     const logElement = document.createElement('div');
     logElement.className = `log-entry ${severity === 'critical' ? 'danger' : 'warning'}`;
-    logElement.textContent = logMessage;
-    
+    logElement.textContent = `[${timestamp}] ${message}`;
     indicators.proctorLogs.appendChild(logElement);
     indicators.proctorLogs.scrollTop = indicators.proctorLogs.scrollHeight;
 
-    // Flash screen red temporarily on violation
-    document.body.style.boxShadow = 'inset 0 0 40px rgba(239, 68, 68, 0.25)';
-    setTimeout(() => {
-        document.body.style.boxShadow = 'none';
-    }, 800);
+    // Flash screen border
+    document.body.style.boxShadow = 'inset 0 0 60px rgba(239, 68, 68, 0.3)';
+    setTimeout(() => { document.body.style.boxShadow = 'none'; }, 800);
 
-    // Skip warning count for minor keyboard/menu blocks
+    // Skip warning counts for passive blocks (right click / keyboard intercepts)
     if (type === 'keyboard_block' || type === 'context_menu') {
-        return; 
+        return;
     }
 
-    if (severity === 'critical') {
-        triggerLockout(`Critical boundary breached: ${message}`);
+    // ── Screenshot violations: log but don't count as strike ─────────────────
+    if (type === 'screenshot') {
+        violationLogs.push({ time: timestamp, type, message, severity: 'info' });
+        showToast('📸 Screenshot Blocked', message, null, 'info');
+        // Write to HR data (informational, no strike)
+        appendViolation(sessionId, { time: timestamp, type, message, severity: 'info' });
+        return;
+    }
+
+    // ── All other violations become strikes ───────────────────────────────────
+    warnings++;
+    const violation = { time: timestamp, type, message, severity };
+    violationLogs.push(violation);
+
+    // ── Write violation to HR data ────────────────────────────────────────────
+    appendViolation(sessionId, violation);
+    // Update student record with latest violation count
+    upsertStudent({
+        sessionId,
+        name: studentName,
+        violations: violationLogs,
+    });
+
+    updateViolationGauge();
+
+    const label = VIOLATION_LABELS[type] || type.toUpperCase();
+
+    if (warnings >= maxWarnings) {
+        // Final strike — show toast briefly then lock
+        showToast(`🚫 ${label}`, message, warnings, 'danger');
+        // Short delay so toast is visible before lockout
+        setTimeout(() => {
+            triggerLockout(message, type);
+        }, 1800);
     } else {
-        warnings++;
-        updateViolationGauge();
-        
-        if (warnings >= maxWarnings) {
-            triggerLockout('Maximum cheating warnings exceeded.');
-        }
+        // Non-final strike — show warning toast, exam continues
+        showToast(`⚠️ ${label}`, message, warnings, 'warning');
     }
 }
 
-/**
- * Update the UI gauge for warning counts
- */
+// ─── Violation Gauge UI ───────────────────────────────────────────────────────
 function updateViolationGauge() {
     indicators.violationCount.textContent = `${warnings} / ${maxWarnings}`;
     const fillPercent = (warnings / maxWarnings) * 100;
     indicators.violationBar.style.width = `${fillPercent}%`;
+
+    // Color gradient as warnings increase
+    if (warnings >= maxWarnings - 1) {
+        indicators.violationBar.style.background = 'linear-gradient(90deg, #ef4444, #dc2626)';
+    } else if (warnings >= 1) {
+        indicators.violationBar.style.background = 'linear-gradient(90deg, #f59e0b, #d97706)';
+    }
+
+    // Update strike dot circles
+    for (let i = 1; i <= maxWarnings; i++) {
+        const dot = document.getElementById(`strike-${i}`);
+        if (!dot) continue;
+        dot.className = 'strike-dot-item';
+        if (i <= warnings) {
+            dot.classList.add(`strike-active-${Math.min(i, 3)}`);
+        }
+    }
 }
 
-/**
- * Launch full screen mode request
- */
+// ─── Fullscreen ───────────────────────────────────────────────────────────────
 async function enterFullscreen() {
     const docEl = document.documentElement;
     try {
-        if (docEl.requestFullscreen) {
-            await docEl.requestFullscreen();
-        } else if (docEl.webkitRequestFullscreen) {
-            await docEl.webkitRequestFullscreen();
-        } else if (docEl.msRequestFullscreen) {
-            await docEl.msRequestFullscreen();
-        }
+        if (docEl.requestFullscreen) await docEl.requestFullscreen();
+        else if (docEl.webkitRequestFullscreen) await docEl.webkitRequestFullscreen();
+        else if (docEl.msRequestFullscreen) await docEl.msRequestFullscreen();
         updateChecklistItem(checklist.fullscreen, 'success', 'Fullscreen mode locked');
         return true;
     } catch (err) {
-        console.error("Fullscreen Request Failed: ", err);
         updateChecklistItem(checklist.fullscreen, 'failed', 'Fullscreen authorization failed');
         return false;
     }
 }
 
-/**
- * Request hardware stream permission and screen shares
- */
+// ─── Permission Check Flow ────────────────────────────────────────────────────
 async function startVerificationCheck() {
     btns.requestPerms.disabled = true;
-    
-    // 1. Request Webcam and Audio
+
     try {
         updateChecklistItem(checklist.camera, 'pending', 'Connecting webcam...');
         updateChecklistItem(checklist.mic, 'pending', 'Connecting microphone...');
-        
         await proctor.requestMediaAccess(media.setupWebcam);
-        
         updateChecklistItem(checklist.camera, 'success', 'Webcam connection active');
         updateChecklistItem(checklist.mic, 'success', 'Microphone level active');
         isHardwareReady = true;
@@ -236,7 +397,6 @@ async function startVerificationCheck() {
         return;
     }
 
-    // 2. Request Screen Share
     try {
         updateChecklistItem(checklist.screen, 'pending', 'Awaiting screen selection...');
         await proctor.requestScreenShare();
@@ -248,7 +408,6 @@ async function startVerificationCheck() {
         return;
     }
 
-    // 3. Request Fullscreen
     updateChecklistItem(checklist.fullscreen, 'pending', 'Awaiting fullscreen activation...');
     const fullscreenAllowed = await enterFullscreen();
     if (!fullscreenAllowed) {
@@ -259,16 +418,83 @@ async function startVerificationCheck() {
     enableStartIfReady();
 }
 
-/**
- * Transition page view to the exam panel
- */
-function launchExam() {
+// ─── Student Name Collection ──────────────────────────────────────────────────
+function promptStudentName() {
+    return new Promise(resolve => {
+        // Create name-entry modal overlay
+        const overlay = document.createElement('div');
+        overlay.id = 'name-entry-overlay';
+        overlay.innerHTML = `
+            <div class="name-entry-card">
+                <div class="name-entry-icon">🎓</div>
+                <h2>Enter Your Details</h2>
+                <p>Please provide your name before the exam begins.</p>
+                <input type="text" id="student-name-input" placeholder="Full Name" maxlength="60" autocomplete="name" />
+                <button id="name-confirm-btn" class="btn btn-primary">Begin Exam →</button>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        const input = overlay.querySelector('#student-name-input');
+        const btn = overlay.querySelector('#name-confirm-btn');
+
+        input.focus();
+
+        const confirm = () => {
+            const val = input.value.trim();
+            if (!val) {
+                input.style.borderColor = '#ef4444';
+                input.placeholder = 'Name is required!';
+                return;
+            }
+            overlay.remove();
+            resolve(val || 'Candidate');
+        };
+
+        btn.addEventListener('click', confirm);
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') confirm();
+        });
+    });
+}
+
+// ─── Launch Exam ──────────────────────────────────────────────────────────────
+async function launchExam() {
+    // Collect student name
+    studentName = await promptStudentName();
+
+    // Refresh maxWarnings from HR portal settings
+    maxWarnings = getMaxWarnings();
+
+    // Check if this student's session is already blocked by HR
+    if (isBlocked(sessionId)) {
+        showHrBlockedScreen();
+        return;
+    }
+
+    // Register student session in HR data
+    upsertStudent({
+        sessionId,
+        name: studentName,
+        startTime: new Date().toISOString(),
+        status: 'active',
+        score: null,
+        totalQuestions: activeQuestions.length,
+        answered: 0,
+        correct: 0,
+        violations: [],
+        endTime: null,
+    });
+
     proctor.stopWebcamStream();
 
     views.setup.classList.remove('active');
     views.exam.classList.add('active');
 
-    // Transfer webcam feed to exam sidebar
+    // Update exam header with student name
+    const titleArea = document.querySelector('.exam-title-area h2');
+    if (titleArea) titleArea.textContent = `Software Engineer Screening — ${studentName}`;
+
     navigator.mediaDevices.getUserMedia({
         video: { width: 320, height: 240 },
         audio: false
@@ -279,18 +505,98 @@ function launchExam() {
             proctor.startAiMonitoring(media.examWebcam, media.examCanvas);
         };
     }).catch(() => {
-        handleProctorViolation('webcam_transfer', 'Failed to transfer webcam stream to exam container.', 'critical');
+        handleProctorViolation('webcam_transfer', 'Failed to transfer webcam stream to exam container.', 'warning');
     });
 
     proctor.startEnvironmentMonitoring();
     startTimer();
     buildQuestionGrid();
     loadQuestion(0);
+
+    // Apply screenshot CSS protection
+    applyScreenshotProtection();
+
+    // Poll for HR-initiated block every 5 seconds
+    setInterval(() => {
+        if (isBlocked(sessionId) && views.exam.classList.contains('active')) {
+            proctor.stopAllStreams();
+            clearInterval(timerInterval);
+            showHrBlockedScreen();
+        }
+    }, 5000);
+}
+
+// ─── HR Manual Block Screen ───────────────────────────────────────────────────
+function showHrBlockedScreen() {
+    if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+    }
+    Object.values(views).forEach(v => v && v.classList.remove('active'));
+
+    // Customize blocked view for HR block
+    const triggerLabel = document.getElementById('lockout-trigger-label');
+    if (triggerLabel) triggerLabel.textContent = '🛑 Blocked by Administrator';
+
+    const triggerMsg = document.getElementById('lockout-trigger-msg');
+    if (triggerMsg) triggerMsg.textContent = 'You have been blocked from this exam by the HR administrator. Please contact your exam coordinator.';
+
+    const sessionHashEl = document.getElementById('session-hash');
+    if (sessionHashEl) sessionHashEl.textContent = sessionId;
+
+    const blockViolationList = document.getElementById('block-violation-list');
+    if (blockViolationList) {
+        if (violationLogs.length > 0) {
+            blockViolationList.innerHTML = violationLogs.map((log, idx) => `
+                <li class="${idx === violationLogs.length - 1 ? 'final-strike' : ''}">
+                    <span class="log-time">${log.time}</span>
+                    <span class="log-type-badge">${VIOLATION_LABELS[log.type] || log.type.toUpperCase()}</span>
+                    <span class="log-desc">${log.message}</span>
+                </li>
+            `).join('');
+        } else {
+            blockViolationList.innerHTML = '<li><span class="log-time">—</span> <span class="log-type-badge badge-critical">HR Block</span> Blocked by administrator before exam completion.</li>';
+        }
+    }
+
+    views.blocked.classList.add('active');
 }
 
 /**
- * Handle timer interval ticks
+ * CSS-based screenshot deterrence — makes content unreadable in screenshots
+ * via a print-specific style and user-select restrictions
  */
+function applyScreenshotProtection() {
+    // Disable text selection across exam content
+    const examContent = document.querySelector('.exam-main-content');
+    if (examContent) {
+        examContent.style.userSelect = 'none';
+        examContent.style.webkitUserSelect = 'none';
+    }
+
+    // Inject print-protection style (hides content in print/print-to-PDF)
+    const printStyle = document.createElement('style');
+    printStyle.id = 'print-protection';
+    printStyle.textContent = `
+        @media print {
+            body * { visibility: hidden !important; }
+            body::after {
+                visibility: visible !important;
+                content: '⚠️ THIS DOCUMENT IS PROTECTED. SCREENSHOT ATTEMPT RECORDED. SESSION ID: ' attr(data-session-id);
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                font-size: 24px;
+                color: red;
+                font-weight: bold;
+                text-align: center;
+            }
+        }
+    `;
+    document.head.appendChild(printStyle);
+}
+
+// ─── Timer ────────────────────────────────────────────────────────────────────
 function startTimer() {
     timerInterval = setInterval(() => {
         timeLeft--;
@@ -301,7 +607,6 @@ function startTimer() {
             const minutes = Math.floor(timeLeft / 60);
             const seconds = timeLeft % 60;
             indicators.timer.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-            
             if (timeLeft < 300) {
                 indicators.timer.style.color = '#ef4444';
             }
@@ -309,9 +614,7 @@ function startTimer() {
     }, 1000);
 }
 
-/**
- * Generate navigation grid for questions drawer
- */
+// ─── Question Navigation ──────────────────────────────────────────────────────
 function buildQuestionGrid() {
     questionView.grid.innerHTML = '';
     activeQuestions.forEach((_, idx) => {
@@ -324,9 +627,6 @@ function buildQuestionGrid() {
     });
 }
 
-/**
- * Render details of active question index
- */
 function loadQuestion(index) {
     if (activeQuestions.length === 0) return;
     currentQuestionIndex = index;
@@ -341,9 +641,7 @@ function loadQuestion(index) {
         q.options.forEach((opt, optIdx) => {
             const optBtn = document.createElement('button');
             optBtn.className = 'option-btn';
-            if (answers[index] === optIdx) {
-                optBtn.classList.add('selected');
-            }
+            if (answers[index] === optIdx) optBtn.classList.add('selected');
 
             const letter = String.fromCharCode(65 + optIdx);
             optBtn.innerHTML = `
@@ -356,6 +654,9 @@ function loadQuestion(index) {
                 optBtn.classList.add('selected');
                 answers[index] = optIdx;
                 updateQuestionStatus(index, 'answered');
+                // Update answered count in HR data
+                const answeredCount = Object.keys(answers).length;
+                upsertStudent({ sessionId, name: studentName, answered: answeredCount });
             });
 
             questionView.options.appendChild(optBtn);
@@ -397,42 +698,40 @@ function loadQuestion(index) {
     }
 }
 
-/**
- * Update the state style of elements in the navigation grid
- */
 function updateQuestionStatus(index, status) {
     const gridItem = document.getElementById(`grid-q-${index}`);
     if (gridItem) {
         gridItem.className = `grid-item ${status}`;
-        if (index === currentQuestionIndex) {
-            gridItem.classList.add('current');
-        }
+        if (index === currentQuestionIndex) gridItem.classList.add('current');
     }
 }
 
-/**
- * Handle next, prev, and skip buttons
- */
 function handleNext() {
-    if (currentQuestionIndex < activeQuestions.length - 1) {
-        loadQuestion(currentQuestionIndex + 1);
-    }
+    if (currentQuestionIndex < activeQuestions.length - 1) loadQuestion(currentQuestionIndex + 1);
 }
-
 function handlePrev() {
-    if (currentQuestionIndex > 0) {
-        loadQuestion(currentQuestionIndex - 1);
-    }
+    if (currentQuestionIndex > 0) loadQuestion(currentQuestionIndex - 1);
 }
-
 function handleSkip() {
     updateQuestionStatus(currentQuestionIndex, 'skipped');
     handleNext();
 }
 
-/**
- * Complete the exam and submit response payload
- */
+// ─── Score Calculation ────────────────────────────────────────────────────────
+function calculateScore() {
+    let correct = 0;
+    let mcqTotal = 0;
+    activeQuestions.forEach((q, idx) => {
+        if (q.type === 'single') {
+            mcqTotal++;
+            if (answers[idx] === q.answer) correct++;
+        }
+    });
+    const score = mcqTotal > 0 ? Math.round((correct / mcqTotal) * 100) : 0;
+    return { score, correct, mcqTotal };
+}
+
+// ─── Finish Exam ──────────────────────────────────────────────────────────────
 function finishExam() {
     proctor.stopAllStreams();
     clearInterval(timerInterval);
@@ -441,55 +740,109 @@ function finishExam() {
         document.exitFullscreen().catch(err => console.log(err));
     }
 
+    // Calculate score and save to HR data
+    const { score, correct, mcqTotal } = calculateScore();
+    const answeredCount = Object.keys(answers).length;
+
+    updateStudentStatus(sessionId, 'completed', {
+        score,
+        correct,
+        answered: answeredCount,
+        totalQuestions: activeQuestions.length,
+        endTime: new Date().toISOString(),
+        violations: violationLogs,
+    });
+
     views.exam.classList.remove('active');
     views.success.classList.add('active');
+
+    // Populate success summary
+    const summaryEl = document.getElementById('success-violation-count');
+    if (summaryEl) summaryEl.textContent = warnings;
+    const summaryList = document.getElementById('success-violation-summary');
+    if (summaryList && violationLogs.length > 0) {
+        summaryList.innerHTML = violationLogs.map(log =>
+            `<li><span class="log-type">${VIOLATION_LABELS[log.type] || log.type}</span> — ${log.time}</li>`
+        ).join('');
+    }
+
+    // Show score on success screen
+    const scoreDisplay = document.getElementById('success-score-display');
+    if (scoreDisplay) {
+        scoreDisplay.textContent = `Your Score: ${score}% (${correct}/${mcqTotal} correct)`;
+    }
 }
 
-/**
- * Trigger secure lockout screen
- */
-function triggerLockout(reason) {
-    console.warn(`EXAM BLOCKED: ${reason}`);
+// ─── Lockout Screen ───────────────────────────────────────────────────────────
+function triggerLockout(reason, triggerType) {
+    console.warn(`EXAM REVOKED: ${reason}`);
 
     proctor.stopAllStreams();
     clearInterval(timerInterval);
 
-    media.setupWebcam.srcObject = null;
-    media.examWebcam.srcObject = null;
+    try { media.setupWebcam.srcObject = null; } catch(_) {}
+    try { media.examWebcam.srcObject = null; } catch(_) {}
 
     if (document.fullscreenElement) {
         document.exitFullscreen().catch(err => console.log(err));
     }
 
-    const sessionHashEl = document.getElementById('session-hash');
-    const randomHash = Array.from({length: 24}, () => Math.floor(Math.random()*16).toString(16)).join('').toUpperCase();
-    sessionHashEl.textContent = `SEC-ERR-${randomHash}`;
+    // Mark student as blocked in HR data
+    blockStudent(sessionId);
+    updateStudentStatus(sessionId, 'blocked', {
+        endTime: new Date().toISOString(),
+        violations: violationLogs,
+    });
 
-    const blockViolationList = document.getElementById('block-violation-list');
-    blockViolationList.innerHTML = '';
-    
-    if (violationLogs.length === 0) {
-        const item = document.createElement('li');
-        item.textContent = `[${new Date().toLocaleTimeString()}] ${reason}`;
-        blockViolationList.appendChild(item);
-    } else {
-        violationLogs.forEach(log => {
-            const item = document.createElement('li');
-            item.textContent = `[${log.time}] (${log.type.toUpperCase()}) ${log.message}`;
-            blockViolationList.appendChild(item);
-        });
+    // Generate session ID display
+    const sessionHashEl = document.getElementById('session-hash');
+    if (sessionHashEl) {
+        sessionHashEl.textContent = sessionId;
     }
 
+    // Show why they were locked out — the trigger type gets a highlight
+    const triggerLabel = document.getElementById('lockout-trigger-label');
+    if (triggerLabel) {
+        triggerLabel.textContent = VIOLATION_LABELS[triggerType] || 'Security Violation';
+    }
+
+    const triggerMsg = document.getElementById('lockout-trigger-msg');
+    if (triggerMsg) {
+        triggerMsg.textContent = reason;
+    }
+
+    // Build the full violation report
+    const blockViolationList = document.getElementById('block-violation-list');
+    if (blockViolationList) {
+        blockViolationList.innerHTML = '';
+
+        if (violationLogs.length === 0) {
+            const item = document.createElement('li');
+            item.innerHTML = `<span class="log-time">${new Date().toLocaleTimeString()}</span> <span class="log-type-badge">${VIOLATION_LABELS[triggerType] || 'VIOLATION'}</span> ${reason}`;
+            blockViolationList.appendChild(item);
+        } else {
+            violationLogs.forEach((log, idx) => {
+                const item = document.createElement('li');
+                const isLast = idx === violationLogs.length - 1;
+                item.className = isLast ? 'final-strike' : '';
+                item.innerHTML = `
+                    <span class="log-time">${log.time}</span>
+                    <span class="log-type-badge ${log.type === triggerType && isLast ? 'badge-critical' : ''}">${VIOLATION_LABELS[log.type] || log.type.toUpperCase()}</span>
+                    <span class="log-desc">${log.message}</span>
+                `;
+                blockViolationList.appendChild(item);
+            });
+        }
+    }
+
+    // Switch view
     Object.values(views).forEach(view => {
         if (view) view.classList.remove('active');
     });
     views.blocked.classList.add('active');
 }
 
-/* =========================================================================
-   ========================= EVENT BINDINGS ================================
-   ========================================================================= */
-
+// ─── Event Bindings ───────────────────────────────────────────────────────────
 btns.requestPerms.addEventListener('click', startVerificationCheck);
 btns.startExam.addEventListener('click', launchExam);
 btns.next.addEventListener('click', handleNext);
@@ -497,11 +850,23 @@ btns.prev.addEventListener('click', handlePrev);
 btns.skip.addEventListener('click', handleSkip);
 btns.submit.addEventListener('click', finishExam);
 
-// Initialize on page load — always show setup view directly
-window.addEventListener('DOMContentLoaded', () => {
+// ─── Real-Time Syncing ────────────────────────────────────────────────────────
+window.addEventListener('storage', (e) => {
+    if (e.key === 'proctor_exam_questions') {
+        loadActiveQuestions();
+        if (views.exam.classList.contains('active')) {
+            buildQuestionGrid();
+            if (currentQuestionIndex >= activeQuestions.length) {
+                currentQuestionIndex = Math.max(0, activeQuestions.length - 1);
+            }
+            loadQuestion(currentQuestionIndex);
+            showToast('📋 Questions Updated', 'The administrator has updated the exam questions.', null, 'info');
+        }
+    }
+});
 
-    // ── Mobile / Tablet Detection ──────────────────────────────────────────
-    // Detect mobile via touch capability, screen width, AND user-agent
+// ─── Init ─────────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet/i
         .test(navigator.userAgent)
         || (navigator.maxTouchPoints > 1 && window.innerWidth < 1024)
@@ -509,14 +874,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
     if (isMobile) {
         document.getElementById('mobile-block-overlay').classList.add('active');
-        // Stop everything — don't load exam at all on mobile
         return;
     }
-    // ─────────────────────────────────────────────────────────────────────
 
     loadActiveQuestions();
 
-    // Always show candidate setup view
     Object.values(views).forEach(view => {
         if (view) view.classList.remove('active');
     });

@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HR Admin Portal — Exam Proctoring Dashboard</title>
+    <meta name="description" content="HR administrator portal to monitor live exam sessions, student scores, cheating violations, and manage exam questions.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Path adjusted: one level up since this file is in /hr/ folder -->
+    <link rel="stylesheet" href="../src/hr-portal.css">
+
+    <style>
+        .activity-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.875rem;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+        .activity-row:last-child { border-bottom: none; }
+        .activity-icon { font-size: 1.1rem; margin-top: 0.1rem; flex-shrink: 0; }
+        .activity-body { flex: 1; min-width: 0; }
+        .activity-title { font-size: 0.83rem; color: var(--hr-text); line-height: 1.4; }
+        .activity-msg { font-size: 0.76rem; color: var(--hr-text-muted); margin-top: 0.1rem; word-break: break-word; }
+        .activity-time { font-size: 0.72rem; color: var(--hr-text-muted); white-space: nowrap; flex-shrink: 0; font-family: monospace; }
+
+        /* Violation drawer row */
+        .violation-drawer-row { background: transparent !important; cursor: default; }
+        .violation-drawer-row:hover { background: transparent !important; }
+
+        /* ── HR Login Gate ── */
+        #hr-login-gate {
+            position: fixed;
+            inset: 0;
+            z-index: 99999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+
+        /* Hide main app while locked */
+        .hr-app { display: none; }
+        .hr-app.unlocked { display: grid; }
+
+        /* Change secret code row */
+        .secret-code-change {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .secret-code-change input[type="password"] {
+            flex: 1;
+            min-width: 140px;
+            padding: 0.55rem 0.875rem;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            color: #f1f5f9;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.88rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .secret-code-change input:focus {
+            border-color: rgba(99,102,241,0.5);
+        }
+
+        .logout-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.35rem 0.875rem;
+            border-radius: 8px;
+            background: rgba(239,68,68,0.1);
+            border: 1px solid rgba(239,68,68,0.2);
+            color: #f87171;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            margin-left: auto;
+        }
+
+        .logout-btn:hover { background: rgba(239,68,68,0.2); }
+
+        /* ── Plain login form ── */
+        #hr-login-gate {
+            background: #f4f6f9;
+        }
+        #hr-login-gate::before { display: none; }
+
+        .login-card {
+            background: #ffffff;
+            border: 1px solid #d1d5db;
+            border-radius: 12px;
+            padding: 2.5rem 2rem;
+            width: 100%;
+            max-width: 360px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            display: flex;
+            flex-direction: column;
+            gap: 1.1rem;
+        }
+
+        .login-title h1 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #111827;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.2rem;
+        }
+
+        .login-title p {
+            font-size: 0.85rem;
+            color: #6b7280;
+        }
+
+        .plain-pw-input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.95rem;
+            color: #111827;
+            background: #f9fafb;
+            outline: none;
+            transition: border-color 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .plain-pw-input:focus {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+            background: #fff;
+        }
+
+        .plain-login-btn {
+            width: 100%;
+            padding: 0.75rem;
+            background: #4f46e5;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.18s ease;
+        }
+
+        .plain-login-btn:hover { background: #4338ca; }
+        .plain-login-btn:active { background: #3730a3; }
+
+        .login-error-msg {
+            font-size: 0.82rem;
+            color: #dc2626;
+            text-align: center;
+            min-height: 1.1em;
+            font-weight: 500;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .login-error-msg.visible { opacity: 1; }
+    </style>
+</head>
+<body>
+
+<!-- ==================== HR LOGIN GATE ==================== -->
+<div id="hr-login-gate">
+    <div class="login-card">
+        <div class="login-title">
+            <h1>Admin Login</h1>
+            <p>Enter the portal password to continue.</p>
+        </div>
+
+        <input
+            type="password"
+            id="hr-password-input"
+            class="plain-pw-input"
+            placeholder="Enter password"
+            autocomplete="current-password"
+            maxlength="50"
+        />
+
+        <div class="login-error-msg" id="login-error">Incorrect password. Please try again.</div>
+
+        <button class="plain-login-btn" id="btn-plain-login">Login</button>
+    </div>
+</div>
+
+<div class="hr-app" id="hr-app">
+
+    <!-- ==================== TOP HEADER ==================== -->
+    <header class="hr-header">
+        <div class="hr-brand">
+            <div class="hr-brand-icon">🏢</div>
+            <div class="hr-brand-text">
+                <h1>HR Admin Portal</h1>
+                <p>AI-Proctored Examination System</p>
+            </div>
+        </div>
+        <div class="hr-header-right">
+            <div class="hr-live-badge">
+                <span class="hr-live-dot"></span>
+                LIVE MONITORING
+            </div>
+            <a href="../" class="hr-exam-link" target="_blank">↗ Open Exam Portal</a>
+            <button class="logout-btn" id="btn-hr-logout" title="Lock portal">🔒 Lock</button>
+        </div>
+    </header>
+
+    <!-- ==================== SIDEBAR NAVIGATION ==================== -->
+    <nav class="hr-sidebar">
+        <div class="hr-nav-section-label">Overview</div>
+        <div class="hr-nav-item active" data-panel="dashboard">
+            <span class="nav-icon">📊</span> Dashboard
+        </div>
+
+        <div class="hr-nav-divider"></div>
+        <div class="hr-nav-section-label">Management</div>
+
+        <div class="hr-nav-item" data-panel="students">
+            <span class="nav-icon">👥</span> Students &amp; Scores
+        </div>
+        <div class="hr-nav-item" data-panel="questions">
+            <span class="nav-icon">❓</span> Question Manager
+        </div>
+
+        <div class="hr-nav-divider"></div>
+        <div class="hr-nav-section-label">System</div>
+
+        <div class="hr-nav-item" data-panel="settings">
+            <span class="nav-icon">⚙️</span> Settings
+        </div>
+    </nav>
+
+    <!-- ==================== MAIN CONTENT ==================== -->
+    <main class="hr-main">
+
+        <!-- ======= DASHBOARD PANEL ======= -->
+        <section id="panel-dashboard" class="hr-panel active">
+            <div class="hr-page-title">
+                <div>
+                    <h2>📊 Live Dashboard</h2>
+                    <p>Real-time overview of all active exam sessions. Auto-refreshes every 3 seconds.</p>
+                </div>
+            </div>
+
+            <div class="hr-metrics-grid">
+                <div class="hr-metric-card" style="--accent-color: #6366f1">
+                    <div class="metric-icon-row">
+                        <div class="metric-icon">👥</div>
+                        <span class="metric-trend up">Total</span>
+                    </div>
+                    <div class="metric-value" id="metric-total">0</div>
+                    <div class="metric-label">Students Registered</div>
+                </div>
+                <div class="hr-metric-card" style="--accent-color: #10b981">
+                    <div class="metric-icon-row">
+                        <div class="metric-icon">🖥️</div>
+                        <span class="metric-trend up" id="metric-active-badge">Active</span>
+                    </div>
+                    <div class="metric-value" id="metric-active">0</div>
+                    <div class="metric-label">Currently Taking Exam</div>
+                </div>
+                <div class="hr-metric-card" style="--accent-color: #38bdf8">
+                    <div class="metric-icon-row">
+                        <div class="metric-icon">✅</div>
+                        <span class="metric-trend up">Done</span>
+                    </div>
+                    <div class="metric-value" id="metric-completed">0</div>
+                    <div class="metric-label">Completed Sessions</div>
+                </div>
+                <div class="hr-metric-card" style="--accent-color: #ef4444">
+                    <div class="metric-icon-row">
+                        <div class="metric-icon">🚫</div>
+                        <span class="metric-trend danger">Blocked</span>
+                    </div>
+                    <div class="metric-value" id="metric-blocked">0</div>
+                    <div class="metric-label">Blocked / Revoked</div>
+                </div>
+                <div class="hr-metric-card" style="--accent-color: #f59e0b">
+                    <div class="metric-icon-row">
+                        <div class="metric-icon">📈</div>
+                        <span class="metric-trend warn">Avg</span>
+                    </div>
+                    <div class="metric-value" id="metric-avg-score">—</div>
+                    <div class="metric-label">Average Score</div>
+                </div>
+                <div class="hr-metric-card" style="--accent-color: #f43f5e">
+                    <div class="metric-icon-row">
+                        <div class="metric-icon">⚠️</div>
+                        <span class="metric-trend danger">Flags</span>
+                    </div>
+                    <div class="metric-value" id="metric-violations">0</div>
+                    <div class="metric-label">Total Violations</div>
+                </div>
+            </div>
+
+            <div class="hr-card">
+                <div class="hr-card-header">
+                    <div>
+                        <h3>🕐 Recent Activity Feed</h3>
+                        <p>Latest security events and violations across all sessions</p>
+                    </div>
+                </div>
+                <div class="hr-card-body">
+                    <div id="recent-activity-list"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ======= STUDENTS & SCORES PANEL ======= -->
+        <section id="panel-students" class="hr-panel">
+            <div class="hr-page-title">
+                <div>
+                    <h2>👥 Students &amp; Scores</h2>
+                    <p>All exam sessions with scores, violations, and cheating details. Click a row to expand cheating log.</p>
+                </div>
+            </div>
+
+            <div class="hr-card">
+                <div class="hr-card-header">
+                    <div>
+                        <h3>📋 Student Session Log</h3>
+                        <p>Click any row to reveal full cheating / violation details including eye-gaze tracking</p>
+                    </div>
+                    <div class="hr-filter-row">
+                        <input type="text" id="student-search" class="hr-search-input" placeholder="🔍 Search by name or ID...">
+                        <select id="student-filter-status" class="hr-filter-select">
+                            <option value="all">All Status</option>
+                            <option value="active">Active</option>
+                            <option value="completed">Completed</option>
+                            <option value="blocked">Blocked</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="hr-table-container">
+                    <table class="hr-table">
+                        <thead>
+                            <tr>
+                                <th>Student</th>
+                                <th>Status</th>
+                                <th>Score</th>
+                                <th>Violations</th>
+                                <th>Eye/Gaze</th>
+                                <th>Start</th>
+                                <th>End</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="students-tbody">
+                            <tr>
+                                <td colspan="8">
+                                    <div class="hr-empty-state">
+                                        <div class="hr-empty-icon">👤</div>
+                                        <h4>No students yet</h4>
+                                        <p>Waiting for exam sessions to begin. Students will appear here automatically.</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ======= QUESTION MANAGER PANEL ======= -->
+        <section id="panel-questions" class="hr-panel">
+            <div class="hr-page-title">
+                <div>
+                    <h2>❓ Question Manager</h2>
+                    <p>Add, edit, or delete exam questions. Changes are applied instantly to new exam sessions.</p>
+                </div>
+            </div>
+
+            <div class="hr-card">
+                <div class="hr-card-header">
+                    <div>
+                        <h3>📝 Exam Questions</h3>
+                        <p id="qm-count-badge">Loading...</p>
+                    </div>
+                    <div class="qm-controls">
+                        <button class="hr-btn hr-btn-primary" id="btn-add-question">+ Add Question</button>
+                    </div>
+                </div>
+                <div class="hr-card-body">
+                    <ul class="qm-list" id="qm-list">
+                        <div class="hr-empty-state">
+                            <div class="hr-empty-icon">❓</div>
+                            <h4>Loading questions...</h4>
+                        </div>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ======= SETTINGS PANEL ======= -->
+        <section id="panel-settings" class="hr-panel">
+            <div class="hr-page-title">
+                <div>
+                    <h2>⚙️ Settings</h2>
+                    <p>Configure exam parameters and proctoring thresholds.</p>
+                </div>
+            </div>
+
+            <div class="hr-card">
+                <div class="hr-card-header">
+                    <h3>🔧 Exam Configuration</h3>
+                </div>
+                <div class="hr-card-body">
+                    <div class="settings-grid">
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <label>Max Violations Before Block</label>
+                                <p>How many cheating strikes before the exam is permanently revoked.</p>
+                            </div>
+                            <input type="number" id="setting-max-warnings" min="1" max="10" value="4">
+                        </div>
+                    </div>
+                    <div style="margin-top:1.25rem;display:flex;gap:0.75rem">
+                        <button class="hr-btn hr-btn-primary" id="btn-save-settings">💾 Save Settings</button>
+                        <button class="hr-btn hr-btn-ghost" id="btn-reset-questions">🔄 Reset Questions to Default</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hr-card">
+                <div class="hr-card-header">
+                    <div>
+                        <h3>🔐 Change Password</h3>
+                        <p>Change the HR portal access password. Must be at least 4 characters.</p>
+                    </div>
+                </div>
+                <div class="hr-card-body">
+                    <div class="settings-grid">
+                        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:0.75rem">
+                            <div class="settings-row-info">
+                                <label>New Password</label>
+                                <p>Enter a new password and confirm it below. Default is <strong style="color:#a5b4fc">123456789</strong>.</p>
+                            </div>
+                            <div class="secret-code-change" style="width:100%">
+                                <input type="password" id="new-secret-code" placeholder="New password (min 4 chars)" maxlength="50" autocomplete="new-password">
+                                <input type="password" id="confirm-secret-code" placeholder="Confirm new password" maxlength="50" autocomplete="new-password">
+                                <button class="hr-btn hr-btn-primary" id="btn-save-secret-code">🔐 Update Password</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hr-card">
+                <div class="hr-card-header">
+                    <h3>🚨 Danger Zone</h3>
+                </div>
+                <div class="hr-card-body">
+                    <div class="hr-danger-zone">
+                        <h4>Clear All Student Data</h4>
+                        <p>Permanently removes all student session records, scores, violation logs, and block lists from localStorage. This action cannot be undone.</p>
+                        <button class="hr-btn hr-btn-danger" id="btn-clear-students">🗑️ Clear All Student Records</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+</div>
+
+<!-- ==================== QUESTION ADD/EDIT MODAL ==================== -->
+<div id="question-modal" class="hr-modal-overlay">
+    <div class="hr-modal">
+        <div class="hr-modal-header">
+            <h3 id="qm-modal-title">Add New Question</h3>
+            <button class="hr-modal-close">✕</button>
+        </div>
+        <div class="hr-modal-body">
+            <div class="hr-form-group">
+                <label for="qm-type">Question Type</label>
+                <select id="qm-type">
+                    <option value="single">Multiple Choice (Single Answer)</option>
+                    <option value="text">Open-Ended (Text Response)</option>
+                </select>
+            </div>
+
+            <div class="hr-form-group">
+                <label for="qm-text">Question Text</label>
+                <textarea id="qm-text" rows="3" placeholder="Enter your question here..."></textarea>
+            </div>
+
+            <div id="qm-options-section">
+                <div class="hr-form-group">
+                    <label>Answer Options <small style="text-transform:none;letter-spacing:normal;color:var(--hr-text-muted)">(select radio for correct answer)</small></label>
+                    <div class="hr-option-inputs">
+                        <div class="hr-option-row">
+                            <label>A</label>
+                            <input type="radio" name="qm-answer" value="0" checked title="Mark as correct answer">
+                            <input type="text" placeholder="Option A" id="opt-0">
+                        </div>
+                        <div class="hr-option-row">
+                            <label>B</label>
+                            <input type="radio" name="qm-answer" value="1" title="Mark as correct answer">
+                            <input type="text" placeholder="Option B" id="opt-1">
+                        </div>
+                        <div class="hr-option-row">
+                            <label>C</label>
+                            <input type="radio" name="qm-answer" value="2" title="Mark as correct answer">
+                            <input type="text" placeholder="Option C" id="opt-2">
+                        </div>
+                        <div class="hr-option-row">
+                            <label>D</label>
+                            <input type="radio" name="qm-answer" value="3" title="Mark as correct answer">
+                            <input type="text" placeholder="Option D" id="opt-3">
+                        </div>
+                    </div>
+                    <p style="font-size:0.76rem;color:var(--hr-text-muted);margin-top:0.4rem">
+                        🔘 Click the radio button next to an option to mark it as the correct answer.
+                    </p>
+                </div>
+            </div>
+        </div>
+        <div class="hr-modal-footer">
+            <button class="hr-btn hr-btn-ghost btn-modal-cancel">Cancel</button>
+            <button class="hr-btn hr-btn-primary" id="btn-save-question">💾 Save Question</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Container -->
+<div id="hr-toast-container"></div>
+
+<!-- Login Gate Script -->
+<script>
+(function() {
+    const DEFAULT_CODE = '123456789';
+    const STORAGE_KEY  = 'hr_secret_code';
+    const SESSION_KEY  = 'hr_portal_unlocked';
+
+    function getCode() {
+        return localStorage.getItem(STORAGE_KEY) || DEFAULT_CODE;
+    }
+
+    function unlock() {
+        sessionStorage.setItem(SESSION_KEY, 'true');
+        const gate = document.getElementById('hr-login-gate');
+        gate.style.transition = 'opacity 0.35s ease';
+        gate.style.opacity = '0';
+        setTimeout(() => {
+            gate.style.display = 'none';
+            document.getElementById('hr-app').classList.add('unlocked');
+        }, 350);
+    }
+
+    function showError(msg) {
+        const el = document.getElementById('login-error');
+        el.textContent = msg || 'Incorrect password. Please try again.';
+        el.classList.add('visible');
+        const input = document.getElementById('hr-password-input');
+        if (input) { input.style.borderColor = '#ef4444'; input.value = ''; input.focus(); }
+        setTimeout(() => {
+            el.classList.remove('visible');
+            if (input) input.style.borderColor = '';
+        }, 2000);
+    }
+
+    function tryUnlock() {
+        const input = document.getElementById('hr-password-input');
+        const entered = input ? input.value : '';
+        if (!entered) { showError('Please enter the password.'); return; }
+        if (entered === getCode()) {
+            unlock();
+        } else {
+            showError('Incorrect password. Please try again.');
+        }
+    }
+
+    // If already authenticated this session, skip gate
+    if (sessionStorage.getItem(SESSION_KEY) === 'true') {
+        document.getElementById('hr-login-gate').style.display = 'none';
+        document.getElementById('hr-app').classList.add('unlocked');
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const input    = document.getElementById('hr-password-input');
+        const loginBtn = document.getElementById('btn-plain-login');
+
+        if (input) {
+            input.focus();
+            input.addEventListener('keydown', e => {
+                if (e.key === 'Enter') tryUnlock();
+            });
+        }
+        if (loginBtn) loginBtn.addEventListener('click', tryUnlock);
+
+        // Lock button
+        const logoutBtn = document.getElementById('btn-hr-logout');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', () => {
+                sessionStorage.removeItem(SESSION_KEY);
+                const gate = document.getElementById('hr-login-gate');
+                gate.style.opacity = '0';
+                gate.style.display = 'flex';
+                document.getElementById('hr-app').classList.remove('unlocked');
+                const pwInput = document.getElementById('hr-password-input');
+                if (pwInput) pwInput.value = '';
+                requestAnimationFrame(() => {
+                    gate.style.transition = 'opacity 0.3s';
+                    gate.style.opacity = '1';
+                    if (pwInput) pwInput.focus();
+                });
+            });
+        }
+
+        // Change password from Settings panel
+        const saveCodeBtn = document.getElementById('btn-save-secret-code');
+        if (saveCodeBtn) {
+            saveCodeBtn.addEventListener('click', () => {
+                const newCode = document.getElementById('new-secret-code').value.trim();
+                const confirm = document.getElementById('confirm-secret-code').value.trim();
+                if (!newCode || newCode.length < 4) {
+                    alert('Password must be at least 4 characters.'); return;
+                }
+                if (newCode !== confirm) {
+                    alert('Passwords do not match. Please re-enter.'); return;
+                }
+                localStorage.setItem(STORAGE_KEY, newCode);
+                document.getElementById('new-secret-code').value = '';
+                document.getElementById('confirm-secret-code').value = '';
+                alert('Password updated! Use the new password on next login.');
+            });
+        }
+    });
+
+    window.hrGetCode = getCode;
+})();
+</script>
+
+<!-- Main HR Portal Script — path adjusted for /hr/ subdirectory -->
+<script type="module" src="../src/hr-portal.js"></script>
+
+</body>
+</html>

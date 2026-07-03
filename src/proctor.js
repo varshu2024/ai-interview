@@ -1,6 +1,7 @@
 /**
- * AI Proctoring Engine
- * Monitors webcam, microphone, screen sharing, window activity, and user inputs.
+ * AI Proctoring Engine v2
+ * Monitors webcam, microphone, screen sharing, window activity, user inputs,
+ * eye gaze direction, and screenshot prevention.
  */
 
 export class ProctorEngine {
@@ -9,6 +10,7 @@ export class ProctorEngine {
             onViolation: callbacks.onViolation || (() => {}),
             onVolumeChange: callbacks.onVolumeChange || (() => {}),
             onModelLoaded: callbacks.onModelLoaded || (() => {}),
+            onGazeUpdate: callbacks.onGazeUpdate || (() => {}),
             ...callbacks
         };
 
@@ -18,7 +20,7 @@ export class ProctorEngine {
         this.audioCtx = null;
         this.analyser = null;
         this.audioInterval = null;
-        
+
         // AI model
         this.cocoModel = null;
         this.aiInterval = null;
@@ -28,6 +30,11 @@ export class ProctorEngine {
         this.isMonitoring = false;
         this.isAiRunning = false;
 
+        // Gaze tracking state
+        this.gazeOffFrames = 0;
+        this.gazeInterval = null;
+        this.lastGazeStatus = 'center';
+
         // Bound event listeners for proper removal
         this.handleVisibilityChange = this.handleVisibilityChange.bind(this);
         this.handleWindowBlur = this.handleWindowBlur.bind(this);
@@ -35,6 +42,9 @@ export class ProctorEngine {
         this.handleMouseLeave = this.handleMouseLeave.bind(this);
         this.handleKeydown = this.handleKeydown.bind(this);
         this.handleContextMenu = this.handleContextMenu.bind(this);
+        this.handleScreenshotKey = this.handleScreenshotKey.bind(this);
+        this.handlePrintScreen = this.handlePrintScreen.bind(this);
+        this.handleCopy = this.handleCopy.bind(this);
     }
 
     /**
@@ -42,7 +52,6 @@ export class ProctorEngine {
      */
     async loadModel() {
         try {
-            // Wait for CDN script tags to load and expose window.cocoSsd
             let attempts = 0;
             while (!window.cocoSsd && attempts < 50) {
                 await new Promise(resolve => setTimeout(resolve, 100));
@@ -54,9 +63,9 @@ export class ProctorEngine {
             }
 
             this.cocoModel = await window.cocoSsd.load({
-                base: 'lite_mobilenet_v2' // Load lightweight model for faster mobile/browser inference
+                base: 'lite_mobilenet_v2'
             });
-            
+
             this.callbacks.onModelLoaded(true);
             return true;
         } catch (error) {
@@ -101,27 +110,23 @@ export class ProctorEngine {
     async requestScreenShare() {
         try {
             this.screenStream = await navigator.mediaDevices.getDisplayMedia({
-                video: {
-                    cursor: "always"
-                },
+                video: { cursor: "always" },
                 audio: false
             });
 
             const videoTrack = this.screenStream.getVideoTracks()[0];
             const settings = videoTrack.getSettings();
 
-            // Check if user shared the ENTIRE desktop (monitor) or just a single tab/window
             if (settings.displaySurface && settings.displaySurface !== 'monitor') {
                 this.stopScreenStream();
                 throw new Error("Multiple screen/window sharing is restricted. You must share your ENTIRE screen to proceed.");
             }
 
-            // Listen if screen sharing is stopped during the exam
             videoTrack.onended = () => {
                 if (this.isMonitoring) {
                     this.callbacks.onViolation(
-                        'screen_stopped', 
-                        'Screen sharing was terminated by the user. Exam locked.', 
+                        'screen_stopped',
+                        'Screen sharing was terminated by the user.',
                         'critical'
                     );
                 }
@@ -144,17 +149,15 @@ export class ProctorEngine {
             const audioTrack = this.webcamStream.getAudioTracks()[0];
             if (!audioTrack) return;
 
-            // Create AudioContext
             this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             const source = this.audioCtx.createMediaStreamSource(new MediaStream([audioTrack]));
-            
+
             this.analyser = this.audioCtx.createAnalyser();
             this.analyser.fftSize = 256;
             source.connect(this.analyser);
 
             const bufferLength = this.analyser.frequencyBinCount;
             const dataArray = new Uint8Array(bufferLength);
-
             let highVolumeDuration = 0;
 
             this.audioInterval = setInterval(() => {
@@ -162,24 +165,20 @@ export class ProctorEngine {
 
                 this.analyser.getByteTimeDomainData(dataArray);
 
-                // Calculate Root Mean Square (RMS) of audio amplitude
                 let sum = 0;
                 for (let i = 0; i < bufferLength; i++) {
                     const val = (dataArray[i] - 128) / 128;
                     sum += val * val;
                 }
                 const rms = Math.sqrt(sum / bufferLength);
-                
-                // Scale output to 0-100%
                 const volumePercent = Math.min(Math.round(rms * 400), 100);
                 this.callbacks.onVolumeChange(volumePercent);
 
-                // Threshold logic: check if speaking levels (rms > 0.15) persist for > 3 seconds
                 if (this.isMonitoring && rms > 0.18) {
-                    highVolumeDuration += 200; // Increment duration (checking every 200ms)
+                    highVolumeDuration += 200;
                     if (highVolumeDuration >= 3000) {
-                        this.callbacks.onViolation('noise', 'Consistent vocal noise or audio activity detected.', 'warning');
-                        highVolumeDuration = 0; // Reset threshold timer
+                        this.callbacks.onViolation('noise', 'Consistent vocal noise detected near microphone.', 'warning');
+                        highVolumeDuration = 0;
                     }
                 } else {
                     highVolumeDuration = Math.max(0, highVolumeDuration - 200);
@@ -192,14 +191,109 @@ export class ProctorEngine {
     }
 
     /**
+     * Estimate eye gaze direction based on face landmark positions in the video frame.
+     * Uses pixel analysis on a small canvas to detect iris position relative to eye region.
+     */
+    startGazeTracking(videoElement) {
+        const gazeCanvas = document.createElement('canvas');
+        gazeCanvas.width = 160;
+        gazeCanvas.height = 120;
+        const gazeCtx = gazeCanvas.getContext('2d', { willReadFrequently: true });
+
+        let consecutiveOffGaze = 0;
+
+        this.gazeInterval = setInterval(() => {
+            if (!this.isMonitoring || !videoElement || videoElement.readyState < 2) return;
+
+            try {
+                // Draw scaled-down frame for fast analysis
+                gazeCtx.drawImage(videoElement, 0, 0, 160, 120);
+                const imageData = gazeCtx.getImageData(0, 0, 160, 120);
+                const data = imageData.data;
+
+                // Analyze upper-center region (forehead/eye zone: y 20-55, x 30-130)
+                let darkPixelX = 0;
+                let darkPixelCount = 0;
+                let totalPixelCount = 0;
+                
+                const eyeYStart = 20, eyeYEnd = 55;
+                const eyeXStart = 30, eyeXEnd = 130;
+
+                for (let y = eyeYStart; y < eyeYEnd; y++) {
+                    for (let x = eyeXStart; x < eyeXEnd; x++) {
+                        const idx = (y * 160 + x) * 4;
+                        const r = data[idx];
+                        const g = data[idx + 1];
+                        const b = data[idx + 2];
+                        const brightness = (r + g + b) / 3;
+                        totalPixelCount++;
+
+                        // Dark pixels likely represent iris/pupil regions
+                        if (brightness < 70) {
+                            darkPixelX += x;
+                            darkPixelCount++;
+                        }
+                    }
+                }
+
+                if (darkPixelCount < 5) {
+                    // Not enough dark pixels — face likely not visible or turned far away
+                    consecutiveOffGaze++;
+                    if (consecutiveOffGaze >= 4) {
+                        this.callbacks.onGazeUpdate('away', 'Face not detected — candidate may have looked away.');
+                        if (consecutiveOffGaze === 4 || consecutiveOffGaze % 8 === 0) {
+                            this.callbacks.onViolation('gaze_away', 'Eyes not focused on screen — candidate may be looking away.', 'warning');
+                        }
+                    }
+                    return;
+                }
+
+                const avgDarkX = darkPixelX / darkPixelCount;
+                const centerX = (eyeXStart + eyeXEnd) / 2;
+                const deviation = avgDarkX - centerX;
+
+                let gazeStatus;
+                if (Math.abs(deviation) < 15) {
+                    gazeStatus = 'center';
+                    consecutiveOffGaze = 0;
+                } else if (deviation < -15) {
+                    gazeStatus = 'left';
+                    consecutiveOffGaze++;
+                } else {
+                    gazeStatus = 'right';
+                    consecutiveOffGaze++;
+                }
+
+                this.callbacks.onGazeUpdate(gazeStatus, null);
+
+                // Fire violation after looking away for ~3 seconds (6 intervals × 500ms)
+                if (consecutiveOffGaze >= 6 && (gazeStatus === 'left' || gazeStatus === 'right')) {
+                    if (consecutiveOffGaze === 6 || consecutiveOffGaze % 12 === 0) {
+                        this.callbacks.onViolation(
+                            'gaze_away',
+                            `Eyes detected looking ${gazeStatus} — candidate may be reading from an external source.`,
+                            'warning'
+                        );
+                    }
+                }
+
+                this.lastGazeStatus = gazeStatus;
+
+            } catch (err) {
+                // Silently continue if frame analysis fails
+            }
+        }, 500);
+    }
+
+    /**
      * Starts background AI loop using TensorFlow.js COCO-SSD object detection
      */
     startAiMonitoring(videoElement, canvasElement) {
         if (!this.cocoModel || !videoElement || !canvasElement) return;
 
         const ctx = canvasElement.getContext('2d');
-        canvasElement.width = videoElement.videoWidth || 640;
-        canvasElement.height = videoElement.videoHeight || 480;
+        canvasElement.width = videoElement.videoWidth || 320;
+        canvasElement.height = videoElement.videoHeight || 240;
 
         this.isAiRunning = true;
         let absentFrames = 0;
@@ -209,59 +303,48 @@ export class ProctorEngine {
             if (!this.isAiRunning) return;
 
             try {
-                // Perform model detection
                 const predictions = await this.cocoModel.detect(videoElement);
-                
-                // Clear previous bounding boxes
+
                 ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
                 let personCount = 0;
                 let cellPhoneDetected = false;
 
-                // Process predictions
                 predictions.forEach(prediction => {
                     const [x, y, width, height] = prediction.bbox;
                     const className = prediction.class;
                     const confidence = Math.round(prediction.score * 100);
 
-                    // Draw bounding boxes on canvas for visually impressive feedback
                     if (className === 'person' || className === 'cell phone') {
                         const isViolating = className === 'cell phone';
                         ctx.strokeStyle = isViolating ? '#ff0055' : '#00ff87';
-                        ctx.lineWidth = 3;
+                        ctx.lineWidth = 2;
                         ctx.strokeRect(x, y, width, height);
 
                         ctx.fillStyle = isViolating ? '#ff0055' : '#00ff87';
-                        ctx.font = 'bold 12px sans-serif';
-                        ctx.fillText(`${className.toUpperCase()} (${confidence}%)`, x + 5, y > 15 ? y - 5 : y + 15);
+                        ctx.font = 'bold 10px sans-serif';
+                        ctx.fillText(`${className.toUpperCase()} (${confidence}%)`, x + 4, y > 15 ? y - 4 : y + 12);
                     }
 
-                    if (className === 'person') {
-                        personCount++;
-                    }
-                    if (className === 'cell phone') {
-                        cellPhoneDetected = true;
-                    }
+                    if (className === 'person') personCount++;
+                    if (className === 'cell phone') cellPhoneDetected = true;
                 });
 
-                // Rule evaluations
                 if (this.isMonitoring) {
-                    // 1. Multiple people detection
                     if (personCount > 1) {
                         this.callbacks.onViolation(
-                            'multiple_people', 
-                            `Multiple people (${personCount}) detected in video feed.`, 
+                            'multiple_people',
+                            `Multiple people (${personCount}) detected in video feed.`,
                             'warning'
                         );
                     }
-                    
-                    // 2. Candidate absence detection
+
                     if (personCount === 0) {
                         absentFrames++;
-                        if (absentFrames >= 3) { // User has been absent for ~4.5 seconds
+                        if (absentFrames >= 3) {
                             this.callbacks.onViolation(
-                                'no_person', 
-                                'No candidate detected in webcam view. Please face the camera.', 
+                                'no_person',
+                                'No candidate detected in webcam view. Please face the camera.',
                                 'warning'
                             );
                             absentFrames = 0;
@@ -270,14 +353,13 @@ export class ProctorEngine {
                         absentFrames = 0;
                     }
 
-                    // 3. Cell phone detection (instant/fast trigger)
                     if (cellPhoneDetected) {
                         phoneFrames++;
-                        if (phoneFrames >= 2) { // Phone visible for 2 consecutive evaluations
+                        if (phoneFrames >= 2) {
                             this.callbacks.onViolation(
-                                'cell_phone', 
-                                'Electronic device (mobile phone) detected in frame.', 
-                                'critical'
+                                'cell_phone',
+                                'Mobile phone detected in camera frame.',
+                                'warning'
                             );
                             phoneFrames = 0;
                         }
@@ -287,14 +369,16 @@ export class ProctorEngine {
                 }
 
             } catch (err) {
-                console.error("AI detection frame evaluation error: ", err);
+                console.error("AI detection error: ", err);
             }
 
-            // Schedule next frame check in 1.5 seconds to save resources
             this.aiInterval = setTimeout(detectFrame, 1500);
         };
 
         detectFrame();
+
+        // Also start gaze tracking
+        this.startGazeTracking(videoElement);
     }
 
     /**
@@ -303,19 +387,17 @@ export class ProctorEngine {
     startEnvironmentMonitoring() {
         this.isMonitoring = true;
 
-        // Register window blur & visibility tracking
         document.addEventListener('visibilitychange', this.handleVisibilityChange);
         window.addEventListener('blur', this.handleWindowBlur);
-        
-        // Fullscreen tracking
         document.addEventListener('fullscreenchange', this.handleFullscreenChange);
-        
-        // Mouse coordinate tracking
         document.addEventListener('mouseleave', this.handleMouseLeave);
-
-        // Inputs restrictions (blocks copy, paste, right-click, F12)
         document.addEventListener('keydown', this.handleKeydown);
         document.addEventListener('contextmenu', this.handleContextMenu);
+
+        // Screenshot prevention
+        document.addEventListener('keyup', this.handleScreenshotKey);
+        window.addEventListener('beforeprint', this.handlePrintScreen);
+        document.addEventListener('copy', this.handleCopy);
     }
 
     /**
@@ -330,6 +412,14 @@ export class ProctorEngine {
         document.removeEventListener('mouseleave', this.handleMouseLeave);
         document.removeEventListener('keydown', this.handleKeydown);
         document.removeEventListener('contextmenu', this.handleContextMenu);
+        document.removeEventListener('keyup', this.handleScreenshotKey);
+        window.removeEventListener('beforeprint', this.handlePrintScreen);
+        document.removeEventListener('copy', this.handleCopy);
+
+        if (this.gazeInterval) {
+            clearInterval(this.gazeInterval);
+            this.gazeInterval = null;
+        }
     }
 
     /* ================= INDIVIDUAL EVENT HANDLERS ================= */
@@ -337,8 +427,8 @@ export class ProctorEngine {
     handleVisibilityChange() {
         if (document.visibilityState === 'hidden') {
             this.callbacks.onViolation(
-                'tab_switch', 
-                'Navigation event: Candidate switched browser tab or minimized window.', 
+                'tab_switch',
+                'Candidate switched browser tab or minimized window.',
                 'warning'
             );
         }
@@ -346,8 +436,8 @@ export class ProctorEngine {
 
     handleWindowBlur() {
         this.callbacks.onViolation(
-            'window_blur', 
-            'Focus lost: Candidate clicked outside of the secure exam boundary.', 
+            'window_blur',
+            'Focus lost — candidate clicked outside of the secure exam window.',
             'warning'
         );
     }
@@ -355,8 +445,8 @@ export class ProctorEngine {
     handleFullscreenChange() {
         if (!document.fullscreenElement) {
             this.callbacks.onViolation(
-                'fullscreen_exit', 
-                'Exam layout exited secure fullscreen mode. Fullscreen required.', 
+                'fullscreen_exit',
+                'Exam exited fullscreen mode — fullscreen is required during exam.',
                 'warning'
             );
         }
@@ -364,32 +454,76 @@ export class ProctorEngine {
 
     handleMouseLeave() {
         this.callbacks.onViolation(
-            'mouse_leave', 
-            'Cursor boundaries crossed: Mouse moved outside the exam browser pane.', 
+            'mouse_leave',
+            'Mouse cursor moved outside the exam browser window boundary.',
             'warning'
         );
     }
 
     handleKeydown(e) {
-        // Block Copy, Paste, Cut — candidates cannot copy exam questions
+        // Block Copy, Paste, Cut
         if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'v' || e.key === 'x')) {
             e.preventDefault();
+            this.callbacks.onViolation('copy_paste', 'Copy/Cut/Paste keyboard shortcut blocked.', 'warning');
             return false;
         }
 
-        // Block Source Inspection combinations
-        if (e.key === 'F12' || 
-            ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) || 
+        // Block Dev Tools
+        if (e.key === 'F12' ||
+            ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) ||
             ((e.ctrlKey || e.metaKey) && e.key === 'u')) {
             e.preventDefault();
-            this.callbacks.onViolation('keyboard_block', 'Developer inspecting keys blocked (Source views restricted).', 'warning');
+            this.callbacks.onViolation('devtools', 'Developer tools access attempt blocked.', 'warning');
+            return false;
+        }
+
+        // Block Print Screen / screenshot keys
+        if (e.key === 'PrintScreen' || e.key === 'Snapshot') {
+            e.preventDefault();
+            // Clear clipboard immediately
+            navigator.clipboard?.writeText('').catch(() => {});
+            this.callbacks.onViolation('screenshot', 'Screenshot attempt detected and blocked (PrintScreen key).', 'warning');
+            return false;
+        }
+
+        // Block Windows Snipping Tool (Win+Shift+S)
+        if (e.key === 'S' && e.shiftKey && e.metaKey) {
+            e.preventDefault();
+            this.callbacks.onViolation('screenshot', 'Screenshot shortcut (Win+Shift+S) detected and blocked.', 'warning');
+            return false;
+        }
+
+        // Block Alt+PrintScreen
+        if (e.altKey && (e.key === 'PrintScreen' || e.key === 'Snapshot')) {
+            e.preventDefault();
+            this.callbacks.onViolation('screenshot', 'Alt+PrintScreen screenshot attempt blocked.', 'warning');
             return false;
         }
     }
 
+    handleScreenshotKey(e) {
+        // On keyup: if PrintScreen was pressed, clear clipboard
+        if (e.key === 'PrintScreen' || e.key === 'Snapshot') {
+            navigator.clipboard?.writeText('⚠️ Screenshot blocked by exam security system').catch(() => {});
+        }
+    }
+
+    handlePrintScreen() {
+        // Block browser print dialog (also used for screenshot-to-PDF)
+        window.print = () => {};
+        this.callbacks.onViolation('screenshot', 'Print/screenshot via browser print dialog was blocked.', 'warning');
+    }
+
     handleContextMenu(e) {
         e.preventDefault();
-        this.callbacks.onViolation('context_menu', 'Right click blocked (context menu restricted).', 'warning');
+        return false;
+    }
+
+    handleCopy(e) {
+        e.preventDefault();
+        if (e.clipboardData) {
+            e.clipboardData.setData('text/plain', '');
+        }
         return false;
     }
 
@@ -397,10 +531,11 @@ export class ProctorEngine {
 
     stopAllStreams() {
         this.stopEnvironmentMonitoring();
-        
+
         this.isAiRunning = false;
         if (this.aiInterval) clearTimeout(this.aiInterval);
         if (this.audioInterval) clearInterval(this.audioInterval);
+        if (this.gazeInterval) clearInterval(this.gazeInterval);
 
         this.stopWebcamStream();
         this.stopScreenStream();
