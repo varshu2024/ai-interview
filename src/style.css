@@ -1618,3 +1618,146 @@ p {
     color: #065f46;
     text-align: center;
 }
+
+/* ================= GOOGLE FORM STYLE REGISTRATION ================= */
+.gform-container {
+    max-width: 640px;
+    margin: 2.5rem auto;
+    padding: 0 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    font-family: 'Google Sans', Roboto, Arial, sans-serif;
+}
+
+.gform-header-card {
+    background: #ffffff;
+    border: 1px solid #dadce0;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+    border-top: 10px solid #673ab7; /* Classic Google Form Purple */
+    padding: 1.75rem 1.5rem;
+}
+
+.gform-header-card h1 {
+    font-size: 2.2rem;
+    font-weight: 400;
+    color: #202124;
+    margin-bottom: 0.75rem;
+    line-height: 1.25;
+}
+
+.gform-header-card p {
+    font-size: 0.95rem;
+    color: #202124;
+    line-height: 1.5;
+}
+
+.gform-card {
+    background: #ffffff;
+    border: 1px solid #dadce0;
+    border-radius: 8px;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    transition: border-color 0.2s;
+}
+
+.gform-card.error {
+    border-color: #d93025;
+}
+
+.gform-label {
+    font-size: 1rem;
+    font-weight: 500;
+    color: #202124;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.gform-required {
+    color: #d93025;
+    font-weight: 700;
+}
+
+.gform-desc {
+    font-size: 0.82rem;
+    color: #70757a;
+    margin-bottom: 0.25rem;
+}
+
+.gform-input {
+    width: 100%;
+    border: none;
+    border-bottom: 1px solid #dadce0;
+    padding: 0.5rem 0;
+    font-size: 0.95rem;
+    color: #202124;
+    outline: none;
+    background: transparent;
+    transition: border-bottom-color 0.2s;
+}
+
+.gform-input:focus {
+    border-bottom: 2px solid #673ab7;
+}
+
+.gform-input.error {
+    border-bottom-color: #d93025;
+}
+
+.gform-error-msg {
+    color: #d93025;
+    font-size: 0.78rem;
+    display: none;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.25rem;
+}
+
+.gform-error-msg.visible {
+    display: flex;
+}
+
+.gform-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 0.75rem;
+}
+
+.gform-btn {
+    background-color: #673ab7;
+    color: #ffffff;
+    font-size: 0.95rem;
+    font-weight: 500;
+    padding: 0.6rem 1.5rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s, box-shadow 0.2s;
+}
+
+.gform-btn:hover {
+    background-color: #512da8;
+    box-shadow: 0 1px 3px 0 rgba(60,64,67,0.3), 0 4px 8px 3px rgba(60,64,67,0.15);
+}
+
+.gform-clear-btn {
+    background: none;
+    border: none;
+    color: #673ab7;
+    font-size: 0.88rem;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+}
+
+.gform-clear-btn:hover {
+    background-color: rgba(103,58,183,0.04);
+}
+

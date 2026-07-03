@@ -204,6 +204,11 @@ function renderStudentsTable() {
                     <div style="font-weight:600;color:var(--hr-text)">${escHtml(s.name || 'Unknown')}</div>
                     <div style="font-size:0.72rem;color:var(--hr-text-muted);font-family:monospace">${s.sessionId}</div>
                 </td>
+                <td style="font-size:0.82rem;color:var(--hr-text-secondary)">${escHtml(s.email || '—')}</td>
+                <td>
+                    <div style="font-weight:500;color:var(--hr-text)">${escHtml(s.domain || '—')}</div>
+                    <div style="font-size:0.72rem;color:var(--hr-text-muted)">${escHtml(s.college || '—')}</div>
+                </td>
                 <td>${statusBadge}</td>
                 <td>${scoreBar}</td>
                 <td>
@@ -211,8 +216,6 @@ function renderStudentsTable() {
                     <span style="color:var(--hr-text-muted);font-size:0.78rem"> / ${maxWarn}</span>
                 </td>
                 <td><span style="color:${gazeCount > 0 ? 'var(--hr-warning)' : 'var(--hr-text-muted)'}">${gazeCount > 0 ? `👁️ ${gazeCount}` : '—'}</span></td>
-                <td style="font-size:0.78rem;color:var(--hr-text-muted)">${s.startTime ? new Date(s.startTime).toLocaleTimeString() : '—'}</td>
-                <td style="font-size:0.78rem;color:var(--hr-text-muted)">${s.endTime ? new Date(s.endTime).toLocaleTimeString() : 'In progress'}</td>
                 <td onclick="event.stopPropagation()">
                     ${isBlocked
                         ? `<button class="hr-btn hr-btn-success hr-btn-sm" onclick="hrUnblockStudent('${s.sessionId}')">✓ Unblock</button>`

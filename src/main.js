@@ -9,6 +9,9 @@ import {
 // ─── Session Identity ─────────────────────────────────────────────────────────
 let sessionId = generateSessionId();
 let studentName = 'Candidate';
+let studentEmail = '';
+let studentDomain = '';
+let studentCollege = '';
 
 // ─── Application State ────────────────────────────────────────────────────────
 let activeQuestions = [];
@@ -71,6 +74,7 @@ function loadActiveQuestions() {
 
 // ─── DOM Elements ─────────────────────────────────────────────────────────────
 const views = {
+    registration: document.getElementById('registration-view'),
     setup: document.getElementById('setup-view'),
     exam: document.getElementById('exam-view'),
     blocked: document.getElementById('blocked-view'),
@@ -418,51 +422,8 @@ async function startVerificationCheck() {
     enableStartIfReady();
 }
 
-// ─── Student Name Collection ──────────────────────────────────────────────────
-function promptStudentName() {
-    return new Promise(resolve => {
-        // Create name-entry modal overlay
-        const overlay = document.createElement('div');
-        overlay.id = 'name-entry-overlay';
-        overlay.innerHTML = `
-            <div class="name-entry-card">
-                <div class="name-entry-icon">🎓</div>
-                <h2>Enter Your Details</h2>
-                <p>Please provide your name before the exam begins.</p>
-                <input type="text" id="student-name-input" placeholder="Full Name" maxlength="60" autocomplete="name" />
-                <button id="name-confirm-btn" class="btn btn-primary">Begin Exam →</button>
-            </div>
-        `;
-        document.body.appendChild(overlay);
-
-        const input = overlay.querySelector('#student-name-input');
-        const btn = overlay.querySelector('#name-confirm-btn');
-
-        input.focus();
-
-        const confirm = () => {
-            const val = input.value.trim();
-            if (!val) {
-                input.style.borderColor = '#ef4444';
-                input.placeholder = 'Name is required!';
-                return;
-            }
-            overlay.remove();
-            resolve(val || 'Candidate');
-        };
-
-        btn.addEventListener('click', confirm);
-        input.addEventListener('keydown', e => {
-            if (e.key === 'Enter') confirm();
-        });
-    });
-}
-
 // ─── Launch Exam ──────────────────────────────────────────────────────────────
 async function launchExam() {
-    // Collect student name
-    studentName = await promptStudentName();
-
     // Refresh maxWarnings from HR portal settings
     maxWarnings = getMaxWarnings();
 
@@ -476,6 +437,9 @@ async function launchExam() {
     upsertStudent({
         sessionId,
         name: studentName,
+        email: studentEmail,
+        domain: studentDomain,
+        college: studentCollege,
         startTime: new Date().toISOString(),
         status: 'active',
         score: null,
@@ -879,11 +843,96 @@ window.addEventListener('DOMContentLoaded', () => {
 
     loadActiveQuestions();
 
+    // Set initial active view to registration
     Object.values(views).forEach(view => {
         if (view) view.classList.remove('active');
     });
-    views.setup.classList.add('active');
+    if (views.registration) {
+        views.registration.classList.add('active');
+    }
 
-    updateChecklistItem(checklist.model, 'pending', 'Downloading TensorFlow model...');
-    proctor.loadModel();
+    // Google Form validation and submission
+    const btnSubmitReg = document.getElementById('btn-submit-registration');
+    const btnClearReg  = document.getElementById('btn-clear-registration');
+
+    if (btnSubmitReg) {
+        btnSubmitReg.addEventListener('click', () => {
+            let isValid = true;
+
+            const nameVal = document.getElementById('reg-name').value.trim();
+            const emailVal = document.getElementById('reg-email').value.trim();
+            const domainVal = document.getElementById('reg-domain').value.trim();
+            const collegeVal = document.getElementById('reg-college').value.trim();
+
+            // Name validate
+            if (!nameVal) {
+                document.getElementById('gcard-name').classList.add('error');
+                document.getElementById('gerr-name').classList.add('visible');
+                isValid = false;
+            } else {
+                document.getElementById('gcard-name').classList.remove('error');
+                document.getElementById('gerr-name').classList.remove('visible');
+            }
+
+            // Email validate
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailVal || !emailRegex.test(emailVal)) {
+                document.getElementById('gcard-email').classList.add('error');
+                document.getElementById('gerr-email').classList.add('visible');
+                isValid = false;
+            } else {
+                document.getElementById('gcard-email').classList.remove('error');
+                document.getElementById('gerr-email').classList.remove('visible');
+            }
+
+            // Domain validate
+            if (!domainVal) {
+                document.getElementById('gcard-domain').classList.add('error');
+                document.getElementById('gerr-domain').classList.add('visible');
+                isValid = false;
+            } else {
+                document.getElementById('gcard-domain').classList.remove('error');
+                document.getElementById('gerr-domain').classList.remove('visible');
+            }
+
+            // College validate
+            if (!collegeVal) {
+                document.getElementById('gcard-college').classList.add('error');
+                document.getElementById('gerr-college').classList.add('visible');
+                isValid = false;
+            } else {
+                document.getElementById('gcard-college').classList.remove('error');
+                document.getElementById('gerr-college').classList.remove('visible');
+            }
+
+            if (isValid) {
+                studentName = nameVal;
+                studentEmail = emailVal;
+                studentDomain = domainVal;
+                studentCollege = collegeVal;
+
+                // Move to permissions setup screen
+                views.registration.classList.remove('active');
+                views.registration.style.display = 'none';
+                views.setup.classList.add('active');
+
+                // Initialize tensorflow model download when entering setup screen
+                updateChecklistItem(checklist.model, 'pending', 'Downloading TensorFlow model...');
+                proctor.loadModel();
+            }
+        });
+    }
+
+    if (btnClearReg) {
+        btnClearReg.addEventListener('click', () => {
+            if (confirm('Are you sure you want to clear the form?')) {
+                document.getElementById('reg-name').value = '';
+                document.getElementById('reg-email').value = '';
+                document.getElementById('reg-domain').value = '';
+                document.getElementById('reg-college').value = '';
+                document.querySelectorAll('.gform-card').forEach(c => c.classList.remove('error'));
+                document.querySelectorAll('.gform-error-msg').forEach(m => m.classList.remove('visible'));
+            }
+        });
+    }
 });

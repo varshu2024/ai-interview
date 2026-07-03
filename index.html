@@ -30,8 +30,58 @@
 
     <div id="app-container">
 
+        <!-- ================= REGISTRATION / GOOGLE FORM VIEW ================= -->
+        <main id="registration-view" class="view-panel active" style="background:#f0ebf8; min-height:100vh; display:block;">
+            <div class="gform-container">
+                <!-- Header card with Google Forms top accent -->
+                <div class="gform-header-card">
+                    <h1>Secure Exam Registration</h1>
+                    <p>Please enter your accurate candidate details to register for the assessment. The hardware checks and security checks will start after submission.</p>
+                    <p style="color:#d93025; font-size:0.85rem; margin-top:0.5rem;">* Required</p>
+                </div>
+
+                <!-- Card 1: Name -->
+                <div class="gform-card" id="gcard-name">
+                    <div class="gform-label">Full Name <span class="gform-required">*</span></div>
+                    <div class="gform-desc">Enter your full official name.</div>
+                    <input type="text" id="reg-name" class="gform-input" placeholder="Your answer">
+                    <div class="gform-error-msg" id="gerr-name">⚠️ This is a required question</div>
+                </div>
+
+                <!-- Card 2: Email -->
+                <div class="gform-card" id="gcard-email">
+                    <div class="gform-label">Email Address <span class="gform-required">*</span></div>
+                    <div class="gform-desc">Provide your contact email address (used for results).</div>
+                    <input type="text" id="reg-email" class="gform-input" placeholder="Your answer">
+                    <div class="gform-error-msg" id="gerr-email">⚠️ Enter a valid email address</div>
+                </div>
+
+                <!-- Card 3: Domain -->
+                <div class="gform-card" id="gcard-domain">
+                    <div class="gform-label">Specialization / Domain <span class="gform-required">*</span></div>
+                    <div class="gform-desc">E.g. Computer Science, IT, Electronics, Mechanical, etc.</div>
+                    <input type="text" id="reg-domain" class="gform-input" placeholder="Your answer">
+                    <div class="gform-error-msg" id="gerr-domain">⚠️ This is a required question</div>
+                </div>
+
+                <!-- Card 4: College/Org -->
+                <div class="gform-card" id="gcard-college">
+                    <div class="gform-label">College / Organization Name <span class="gform-required">*</span></div>
+                    <div class="gform-desc">Name of your current university or organization.</div>
+                    <input type="text" id="reg-college" class="gform-input" placeholder="Your answer">
+                    <div class="gform-error-msg" id="gerr-college">⚠️ This is a required question</div>
+                </div>
+
+                <!-- Form Actions -->
+                <div class="gform-actions">
+                    <button class="gform-btn" id="btn-submit-registration">Submit &amp; Continue</button>
+                    <button class="gform-clear-btn" id="btn-clear-registration">Clear form</button>
+                </div>
+            </div>
+        </main>
+
         <!-- ================= SETUP / SYSTEM VERIFICATION VIEW ================= -->
-        <main id="setup-view" class="view-panel active">
+        <main id="setup-view" class="view-panel">
             <header class="setup-header">
                 <div class="header-brand">
                     <div class="brand-icon">🛡️</div>
@@ -210,45 +260,26 @@
         </main>
 
         <!-- ================= SYSTEM BLOCKED / LOCKOUT VIEW ================= -->
-        <main id="blocked-view" class="view-panel error-view">
-            <div class="lockout-card">
-                <div class="lockout-header">
-                    <div class="warning-icon">🚫</div>
-                    <h1>Access Revoked</h1>
-                    <p class="lockout-subtitle">Your exam session has been terminated due to repeated integrity violations.</p>
-                </div>
-
-                <!-- Final strike trigger -->
-                <div class="lockout-trigger-banner">
-                    <span class="trigger-label-icon">⚠️</span>
-                    <div class="trigger-text">
-                        <strong id="lockout-trigger-label">Security Violation</strong>
-                        <p id="lockout-trigger-msg">Suspicious behavior was detected.</p>
-                    </div>
-                </div>
-
-                <div class="lockout-body">
-                    <p class="error-msg">
-                        You received <strong id="lockout-violation-count">multiple violations</strong> during your exam session.
-                        The exam is blocked after reaching the maximum allowed violations.
+        <main id="blocked-view" class="view-panel error-view" style="justify-content:center; align-items:center; min-height:100vh; background:#f0ebf8; padding: 2rem 1rem;">
+            <div class="gform-container" style="text-align:center; max-width:540px; margin:auto;">
+                <div class="gform-header-card" style="border-top: 10px solid #d93025; padding: 3rem 2rem; box-shadow: 0 4px 20px rgba(0,0,0,0.06);">
+                    <div style="font-size:4.5rem; margin-bottom:1rem; line-height:1;">🚫</div>
+                    <h1 style="color:#d93025; font-size:2.3rem; font-weight:700; margin-bottom:0.75rem; letter-spacing:-0.02em;">You are blocked</h1>
+                    <p style="color:#202124; font-size:1rem; line-height:1.6; margin:0;">
+                        This exam session has been terminated and access has been revoked. If you believe this is an error, please contact your exam coordinator.
                     </p>
-
-                    <div class="violation-report">
-                        <h3>📋 Complete Violation Record</h3>
-                        <p class="violation-report-sub">Every detected incident is logged below with timestamps and type.</p>
-                        <ul id="block-violation-list" class="violation-list">
-                            <!-- JS will inject proctor infractions here -->
-                        </ul>
-                    </div>
-
-                    <div class="lockout-alert">
-                        ⚠️ This session has been permanently locked. Your IP address, system metadata, webcam snapshots, and screen share recordings have been transmitted to the exam administrator.
+                    <div style="margin-top:2rem; font-size:0.78rem; color:#70757a; font-family:monospace; background:#f8f9fa; padding:0.5rem; border-radius:4px; border:1px solid #dadce0;">
+                        Session ID: <span id="session-hash">N/A</span>
                     </div>
                 </div>
+            </div>
 
-                <div class="lockout-footer">
-                    <span class="session-id-label">Session ID: <span id="session-hash">N/A</span></span>
-                </div>
+            <!-- Hidden dummy elements to maintain main.js compatibility -->
+            <div style="display:none;">
+                <div id="lockout-trigger-label"></div>
+                <div id="lockout-trigger-msg"></div>
+                <div id="lockout-violation-count"></div>
+                <ul id="block-violation-list"></ul>
             </div>
         </main>
 
