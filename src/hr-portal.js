@@ -259,11 +259,19 @@ function buildViolationDrawer(student) {
 
     const violationListHtml = violations.map(v => {
         const chipClass = GAZE_TYPES.includes(v.type) ? 'gaze' : v.type === 'cell_phone' ? 'phone' : v.type === 'screenshot' ? 'screenshot' : '';
+        const screenshotHtml = v.screenshot
+            ? `<div class="v-screenshot-wrap" style="margin-top: 0.5rem; max-width: 240px; border-radius: 8px; overflow: hidden; border: 1.5px solid rgba(255,255,255,0.08); box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+                <img src="${v.screenshot}" alt="Violation Capture" style="width: 100%; display: block; filter: contrast(1.05);" />
+               </div>`
+            : '';
         return `
-            <li>
-                <span class="v-time">${v.time || '--'}</span>
-                <span class="v-type-chip ${chipClass}">${VIOLATION_LABELS[v.type] || v.type}</span>
-                <span class="v-msg">${escHtml(v.message || '')}</span>
+            <li style="margin-bottom: 1.25rem; list-style: none;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                    <span class="v-time">${v.time || '--'}</span>
+                    <span class="v-type-chip ${chipClass}">${VIOLATION_LABELS[v.type] || v.type}</span>
+                    <span class="v-msg" style="color: var(--hr-text-secondary);">${escHtml(v.message || '')}</span>
+                </div>
+                ${screenshotHtml}
             </li>
         `;
     }).join('');
@@ -271,7 +279,7 @@ function buildViolationDrawer(student) {
     return `
         <h4>📋 Cheating / Violation Details — ${escHtml(student.name || 'Unknown')}</h4>
         ${gazeStatsHtml}
-        <ul class="violation-list-hr" style="margin-top:0.75rem">${violationListHtml}</ul>
+        <ul class="violation-list-hr" style="margin-top:0.75rem; padding-left: 0;">${violationListHtml}</ul>
     `;
 }
 

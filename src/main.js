@@ -278,6 +278,28 @@ function enableStartIfReady() {
     }
 }
 
+function captureWebcamScreenshot() {
+    try {
+        const video = media.examWebcam;
+        if (!video || video.readyState < 2) return null;
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 320;
+        canvas.height = video.videoHeight || 240;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        // Add stamp for context
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.85)';
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText(`VIOLATION STAMP - ${new Date().toLocaleTimeString()}`, 8, canvas.height - 8);
+        
+        return canvas.toDataURL('image/jpeg', 0.5); // high compression, low size
+    } catch (e) {
+        console.error('Webcam frame capture error:', e);
+        return null;
+    }
+}
+
 // ─── Core Violation Handler ───────────────────────────────────────────────────
 function handleProctorViolation(type, message, severity) {
     // Debounce repeated violations of same type
@@ -315,9 +337,15 @@ function handleProctorViolation(type, message, severity) {
         return;
     }
 
+    // Capture webcam screenshot when candidate looks away
+    let screenshot = null;
+    if (type === 'gaze_away' || type === 'gaze_down') {
+        screenshot = captureWebcamScreenshot();
+    }
+
     // ── All other violations become strikes ───────────────────────────────────
     warnings++;
-    const violation = { time: timestamp, type, message, severity };
+    const violation = { time: timestamp, type, message, severity, screenshot };
     violationLogs.push(violation);
 
     // ── Write violation to HR data ────────────────────────────────────────────
@@ -333,15 +361,14 @@ function handleProctorViolation(type, message, severity) {
 
     const label = VIOLATION_LABELS[type] || type.toUpperCase();
 
-    if (warnings >= maxWarnings) {
-        // Final strike — show toast briefly then lock
+    if (type === 'cell_phone') {
+        // Immediate lockout for mobile phone detection
         showToast(`🚫 ${label}`, message, warnings, 'danger');
-        // Short delay so toast is visible before lockout
         setTimeout(() => {
             triggerLockout(message, type);
         }, 1800);
     } else {
-        // Non-final strike — show warning toast, exam continues
+        // Warning toast only, exam continues (no lockout block)
         showToast(`⚠️ ${label}`, message, warnings, 'warning');
     }
 }
