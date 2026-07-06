@@ -35,41 +35,52 @@
             <div class="gform-container">
                 <!-- Header card with Google Forms top accent -->
                 <div class="gform-header-card">
-                    <h1>Secure Exam Registration</h1>
-                    <p>Please enter your accurate candidate details to register for the assessment. The hardware checks and security checks will start after submission.</p>
-                    <p style="color:#d93025; font-size:0.85rem; margin-top:0.5rem;">* Required</p>
+                    <h1>Assessment</h1>
+                    <p style="margin-top: 12px; line-height: 1.5; color: #202124; font-size: 0.95rem;">This assessment is designed to evaluate your overall aptitude, communication skills, English proficiency, logical reasoning, and workplace decision-making abilities. The test is a part of our initial screening process and helps us understand your suitability for the role based on your analytical thinking, comprehension, and professional judgment.</p>
+                    <p style="margin-top: 12px; line-height: 1.5; color: #202124; font-size: 0.95rem;">Please read each question carefully and select the most appropriate answer. There is no negative marking, so attempt all questions.</p>
+                    <p style="color:#202124; font-size:0.875rem; margin-top:16px;"><strong>varshuppada@gmail.com</strong> <span style="color:#1a73e8; cursor:pointer;">Switch account</span></p>
+                    <p style="color:#70757a; font-size:0.8rem; margin-top:8px;">Not shared</p>
+                    <p style="color:#d93025; font-size:0.85rem; margin-top:16px;">* Indicates required question</p>
                 </div>
 
-                <!-- Card 1: Name -->
+                <!-- Card 1: Date -->
+                <div class="gform-card" id="gcard-date">
+                    <div class="gform-label">Date <span class="gform-required">*</span></div>
+                    <div class="gform-desc">Select the current date.</div>
+                    <input type="date" id="reg-date" class="gform-input" style="color-scheme: light; min-height: 28px;">
+                    <div class="gform-error-msg" id="gerr-date">⚠️ This is a required question</div>
+                </div>
+
+                <!-- Card 2: Name -->
                 <div class="gform-card" id="gcard-name">
-                    <div class="gform-label">Full Name <span class="gform-required">*</span></div>
+                    <div class="gform-label">Name <span class="gform-required">*</span></div>
                     <div class="gform-desc">Enter your full official name.</div>
                     <input type="text" id="reg-name" class="gform-input" placeholder="Your answer">
                     <div class="gform-error-msg" id="gerr-name">⚠️ This is a required question</div>
                 </div>
 
-                <!-- Card 2: Email -->
+                <!-- Card 3: Email -->
                 <div class="gform-card" id="gcard-email">
-                    <div class="gform-label">Email Address <span class="gform-required">*</span></div>
+                    <div class="gform-label">Email <span class="gform-required">*</span></div>
                     <div class="gform-desc">Provide your contact email address (used for results).</div>
                     <input type="text" id="reg-email" class="gform-input" placeholder="Your answer">
                     <div class="gform-error-msg" id="gerr-email">⚠️ Enter a valid email address</div>
                 </div>
 
-                <!-- Card 3: Domain -->
-                <div class="gform-card" id="gcard-domain">
-                    <div class="gform-label">Specialization / Domain <span class="gform-required">*</span></div>
-                    <div class="gform-desc">E.g. Computer Science, IT, Electronics, Mechanical, etc.</div>
-                    <input type="text" id="reg-domain" class="gform-input" placeholder="Your answer">
-                    <div class="gform-error-msg" id="gerr-domain">⚠️ This is a required question</div>
+                <!-- Card 4: Phone Number -->
+                <div class="gform-card" id="gcard-phone">
+                    <div class="gform-label">Phone Number <span class="gform-required">*</span></div>
+                    <div class="gform-desc">Provide your contact phone number.</div>
+                    <input type="text" id="reg-phone" class="gform-input" placeholder="Your answer">
+                    <div class="gform-error-msg" id="gerr-phone">⚠️ This is a required question</div>
                 </div>
 
-                <!-- Card 4: College/Org -->
-                <div class="gform-card" id="gcard-college">
-                    <div class="gform-label">College / Organization Name <span class="gform-required">*</span></div>
-                    <div class="gform-desc">Name of your current university or organization.</div>
-                    <input type="text" id="reg-college" class="gform-input" placeholder="Your answer">
-                    <div class="gform-error-msg" id="gerr-college">⚠️ This is a required question</div>
+                <!-- Card 5: Location -->
+                <div class="gform-card" id="gcard-location">
+                    <div class="gform-label">Location <span class="gform-required">*</span></div>
+                    <div class="gform-desc">Enter your current location.</div>
+                    <input type="text" id="reg-location" class="gform-input" placeholder="Your answer">
+                    <div class="gform-error-msg" id="gerr-location">⚠️ This is a required question</div>
                 </div>
 
                 <!-- Form Actions -->

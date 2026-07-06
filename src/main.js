@@ -10,8 +10,9 @@ import {
 let sessionId = generateSessionId();
 let studentName = 'Candidate';
 let studentEmail = '';
-let studentDomain = '';
-let studentCollege = '';
+let studentDate = '';
+let studentPhone = '';
+let studentLocation = '';
 
 // ─── Application State ────────────────────────────────────────────────────────
 let activeQuestions = [];
@@ -467,8 +468,9 @@ async function launchExam() {
         sessionId,
         name: studentName,
         email: studentEmail,
-        domain: studentDomain,
-        college: studentCollege,
+        date: studentDate,
+        phone: studentPhone,
+        location: studentLocation,
         startTime: new Date().toISOString(),
         status: 'active',
         score: null,
@@ -885,11 +887,23 @@ window.addEventListener('DOMContentLoaded', () => {
     fetch('https://kvdb.io/aifocused_proctor_db_x791a82/questions')
         .then(res => res.ok ? res.json() : null)
         .then(questions => {
-            if (questions && Array.isArray(questions)) {
+            if (questions && Array.isArray(questions) && questions.length === defaultQuestions.length) {
                 localStorage.setItem('proctor_exam_questions', JSON.stringify(questions));
                 loadActiveQuestions();
+            } else {
+                // If remote database is empty, has old questions, or has a mismatched question count, overwrite with the new defaults
+                localStorage.setItem('proctor_exam_questions', JSON.stringify(defaultQuestions));
+                loadActiveQuestions();
+                fetch('https://kvdb.io/aifocused_proctor_db_x791a82/questions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(defaultQuestions)
+                }).catch(err => console.error("Initial remote questions sync failed:", err));
             }
-        }).catch(err => console.log("Remote questions sync skipped, using local cache:", err));
+        }).catch(err => {
+            console.log("Remote questions sync skipped, using local cache:", err);
+            loadActiveQuestions();
+        });
 
     fetch('https://kvdb.io/aifocused_proctor_db_x791a82/blocked_ids')
         .then(res => res.ok ? res.json() : null)
@@ -908,6 +922,11 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     // Google Form validation and submission
+    const dateInput = document.getElementById('reg-date');
+    if (dateInput) {
+        dateInput.value = new Date().toISOString().split('T')[0];
+    }
+
     const btnSubmitReg = document.getElementById('btn-submit-registration');
     const btnClearReg  = document.getElementById('btn-clear-registration');
 
@@ -915,10 +934,21 @@ window.addEventListener('DOMContentLoaded', () => {
         btnSubmitReg.addEventListener('click', () => {
             let isValid = true;
 
+            const dateVal = document.getElementById('reg-date').value.trim();
             const nameVal = document.getElementById('reg-name').value.trim();
             const emailVal = document.getElementById('reg-email').value.trim();
-            const domainVal = document.getElementById('reg-domain').value.trim();
-            const collegeVal = document.getElementById('reg-college').value.trim();
+            const phoneVal = document.getElementById('reg-phone').value.trim();
+            const locationVal = document.getElementById('reg-location').value.trim();
+
+            // Date validate
+            if (!dateVal) {
+                document.getElementById('gcard-date').classList.add('error');
+                document.getElementById('gerr-date').classList.add('visible');
+                isValid = false;
+            } else {
+                document.getElementById('gcard-date').classList.remove('error');
+                document.getElementById('gerr-date').classList.remove('visible');
+            }
 
             // Name validate
             if (!nameVal) {
@@ -941,31 +971,32 @@ window.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('gerr-email').classList.remove('visible');
             }
 
-            // Domain validate
-            if (!domainVal) {
-                document.getElementById('gcard-domain').classList.add('error');
-                document.getElementById('gerr-domain').classList.add('visible');
+            // Phone validate
+            if (!phoneVal) {
+                document.getElementById('gcard-phone').classList.add('error');
+                document.getElementById('gerr-phone').classList.add('visible');
                 isValid = false;
             } else {
-                document.getElementById('gcard-domain').classList.remove('error');
-                document.getElementById('gerr-domain').classList.remove('visible');
+                document.getElementById('gcard-phone').classList.remove('error');
+                document.getElementById('gerr-phone').classList.remove('visible');
             }
 
-            // College validate
-            if (!collegeVal) {
-                document.getElementById('gcard-college').classList.add('error');
-                document.getElementById('gerr-college').classList.add('visible');
+            // Location validate
+            if (!locationVal) {
+                document.getElementById('gcard-location').classList.add('error');
+                document.getElementById('gerr-location').classList.add('visible');
                 isValid = false;
             } else {
-                document.getElementById('gcard-college').classList.remove('error');
-                document.getElementById('gerr-college').classList.remove('visible');
+                document.getElementById('gcard-location').classList.remove('error');
+                document.getElementById('gerr-location').classList.remove('visible');
             }
 
             if (isValid) {
                 studentName = nameVal;
                 studentEmail = emailVal;
-                studentDomain = domainVal;
-                studentCollege = collegeVal;
+                studentDate = dateVal;
+                studentPhone = phoneVal;
+                studentLocation = locationVal;
 
                 // Move to permissions setup screen
                 views.registration.classList.remove('active');
@@ -982,10 +1013,13 @@ window.addEventListener('DOMContentLoaded', () => {
     if (btnClearReg) {
         btnClearReg.addEventListener('click', () => {
             if (confirm('Are you sure you want to clear the form?')) {
+                if (dateInput) {
+                    dateInput.value = new Date().toISOString().split('T')[0];
+                }
                 document.getElementById('reg-name').value = '';
                 document.getElementById('reg-email').value = '';
-                document.getElementById('reg-domain').value = '';
-                document.getElementById('reg-college').value = '';
+                document.getElementById('reg-phone').value = '';
+                document.getElementById('reg-location').value = '';
                 document.querySelectorAll('.gform-card').forEach(c => c.classList.remove('error'));
                 document.querySelectorAll('.gform-error-msg').forEach(m => m.classList.remove('visible'));
             }

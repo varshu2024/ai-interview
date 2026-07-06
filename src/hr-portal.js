@@ -211,8 +211,9 @@ function renderStudentsTable() {
                 </td>
                 <td style="font-size:0.82rem;color:var(--hr-text-secondary)">${escHtml(s.email || '—')}</td>
                 <td>
-                    <div style="font-weight:500;color:var(--hr-text)">${escHtml(s.domain || '—')}</div>
-                    <div style="font-size:0.72rem;color:var(--hr-text-muted)">${escHtml(s.college || '—')}</div>
+                    <div style="font-weight:500;color:var(--hr-text)">${escHtml(s.phone || '—')}</div>
+                    <div style="font-size:0.72rem;color:var(--hr-text-muted)">📍 ${escHtml(s.location || '—')}</div>
+                    <div style="font-size:0.68rem;color:var(--hr-text-muted);margin-top:2px;">📅 ${escHtml(s.date || '—')}</div>
                 </td>
                 <td>${statusBadge}</td>
                 <td>${scoreBar}</td>

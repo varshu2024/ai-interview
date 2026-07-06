@@ -1,3 +1,5 @@
+import { questions as defaultQuestions } from './questions.js';
+
 /**
  * HR Data Layer — Shared localStorage module
  * Used by both the exam page (main.js) and the HR admin portal (hr-portal.js)
@@ -226,8 +228,16 @@ export async function syncAllFromRemote() {
         // 3. Fetch questions
         const questionsRes = await fetch(`${BUCKET_URL}/questions`);
         if (questionsRes.ok) {
-            const questions = await questionsRes.json();
-            writeJSON(KEYS.QUESTIONS, questions);
+            const remoteQ = await questionsRes.json();
+            if (remoteQ && Array.isArray(remoteQ) && remoteQ.length === defaultQuestions.length) {
+                writeJSON(KEYS.QUESTIONS, remoteQ);
+            } else {
+                writeJSON(KEYS.QUESTIONS, defaultQuestions);
+                await syncQuestionsToRemote(defaultQuestions);
+            }
+        } else {
+            writeJSON(KEYS.QUESTIONS, defaultQuestions);
+            await syncQuestionsToRemote(defaultQuestions);
         }
     } catch (e) {
         console.error('Failed to sync from remote database:', e);
