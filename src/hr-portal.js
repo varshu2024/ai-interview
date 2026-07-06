@@ -334,6 +334,7 @@ function statusBadgeHtml(status) {
         active:    { label: 'Active',    dot: true },
         completed: { label: 'Completed', dot: false },
         blocked:   { label: 'Blocked',   dot: false },
+        pending:   { label: 'Pending',   dot: false },
     };
     const info = map[status] || { label: status, dot: false };
     return `<span class="status-badge ${status}">${info.dot ? '<span class="status-dot"></span>' : ''}${info.label}</span>`;

@@ -1039,6 +1039,23 @@ window.addEventListener('DOMContentLoaded', () => {
                 studentPhone = phoneVal;
                 studentLocation = locationVal;
 
+                // Register student session in HR data as pending
+                upsertStudent({
+                    sessionId,
+                    name: studentName,
+                    email: studentEmail,
+                    date: studentDate,
+                    phone: studentPhone,
+                    location: studentLocation,
+                    startTime: new Date().toISOString(),
+                    status: 'pending',
+                    score: null,
+                    totalQuestions: 0,
+                    answered: 0,
+                    correct: 0,
+                    violations: [],
+                });
+
                 // Move to permissions setup screen
                 views.registration.classList.remove('active');
                 views.registration.style.display = 'none';

@@ -565,7 +565,7 @@ p {
     background-color: #10b981;
     border-radius: 50%;
     box-shadow: 0 0 6px #10b981;
-    animation: pulse 1.5s infinite;
+    /* animation: pulse 1.5s infinite; */
 }
 
 @keyframes pulse {
@@ -959,7 +959,7 @@ p {
     font-size: 3rem;
     line-height: 1;
     margin-bottom: 0.5rem;
-    animation: flash 1s ease infinite alternate;
+    /* animation: flash 1s ease infinite alternate; */
 }
 
 @keyframes flash {
@@ -1322,7 +1322,7 @@ p {
 .gaze-away {
     background: var(--color-danger);
     box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
-    animation: blink-gaze 0.8s ease infinite alternate;
+    /* animation: blink-gaze 0.8s ease infinite alternate; */
 }
 
 @keyframes blink-gaze {
