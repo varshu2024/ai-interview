@@ -201,6 +201,8 @@ export class ProctorEngine {
         const gazeCtx = gazeCanvas.getContext('2d', { willReadFrequently: true });
 
         let consecutiveOffGaze = 0;
+        let consecutiveDownGaze = 0;
+        let downGazeWarningsSent = 0;
 
         this.gazeInterval = setInterval(() => {
             if (!this.isMonitoring || !videoElement || videoElement.readyState < 2) return;
@@ -213,6 +215,7 @@ export class ProctorEngine {
 
                 // Analyze upper-center region (forehead/eye zone: y 20-55, x 30-130)
                 let darkPixelX = 0;
+                let darkPixelY = 0;
                 let darkPixelCount = 0;
                 let totalPixelCount = 0;
                 
@@ -231,12 +234,14 @@ export class ProctorEngine {
                         // Dark pixels likely represent iris/pupil regions
                         if (brightness < 70) {
                             darkPixelX += x;
+                            darkPixelY += y;
                             darkPixelCount++;
                         }
                     }
                 }
 
                 if (darkPixelCount < 5) {
+                    consecutiveDownGaze = 0; // Reset look-down counter if face is absent
                     // Not enough dark pixels — face likely not visible or turned far away
                     consecutiveOffGaze++;
                     if (consecutiveOffGaze >= 4) {
@@ -249,14 +254,20 @@ export class ProctorEngine {
                 }
 
                 const avgDarkX = darkPixelX / darkPixelCount;
+                const avgDarkY = darkPixelY / darkPixelCount;
                 const centerX = (eyeXStart + eyeXEnd) / 2;
-                const deviation = avgDarkX - centerX;
+                const centerY = (eyeYStart + eyeYEnd) / 2;
+                const deviationX = avgDarkX - centerX;
+                const deviationY = avgDarkY - centerY;
 
                 let gazeStatus;
-                if (Math.abs(deviation) < 15) {
+                if (deviationY > 7.5) {
+                    gazeStatus = 'down';
+                    consecutiveOffGaze++;
+                } else if (Math.abs(deviationX) < 15) {
                     gazeStatus = 'center';
                     consecutiveOffGaze = 0;
-                } else if (deviation < -15) {
+                } else if (deviationX < -15) {
                     gazeStatus = 'left';
                     consecutiveOffGaze++;
                 } else {
@@ -264,7 +275,28 @@ export class ProctorEngine {
                     consecutiveOffGaze++;
                 }
 
+                // Manage consecutive down-gaze counter
+                if (gazeStatus === 'down') {
+                    consecutiveDownGaze++;
+                } else {
+                    consecutiveDownGaze = 0;
+                }
+
                 this.callbacks.onGazeUpdate(gazeStatus, null);
+
+                // Fire violation after looking down continuously for 2 minutes (240 ticks of 500ms)
+                // Repeat warning every 30 seconds (60 ticks) up to 5 warnings total
+                if (consecutiveDownGaze >= 240 && downGazeWarningsSent < 5) {
+                    const ticksSinceFirst = consecutiveDownGaze - 240;
+                    if (ticksSinceFirst === 0 || ticksSinceFirst % 60 === 0) {
+                        downGazeWarningsSent++;
+                        this.callbacks.onViolation(
+                            'gaze_down',
+                            `Persistent look down detected (${Math.round(consecutiveDownGaze * 0.5)}s). Please focus on the screen. (Warning ${downGazeWarningsSent}/5)`,
+                            'warning'
+                        );
+                    }
+                }
 
                 // Fire violation after looking away for ~3 seconds (6 intervals × 500ms)
                 if (consecutiveOffGaze >= 6 && (gazeStatus === 'left' || gazeStatus === 'right')) {

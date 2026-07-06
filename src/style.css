@@ -1314,7 +1314,7 @@ p {
     box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
 }
 
-.gaze-left, .gaze-right {
+.gaze-left, .gaze-right, .gaze-down {
     background: var(--color-warning);
     box-shadow: 0 0 6px rgba(245, 158, 11, 0.5);
 }

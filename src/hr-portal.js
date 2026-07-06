@@ -29,6 +29,7 @@ const VIOLATION_LABELS = {
     multiple_people:'👥 Multiple People',
     cell_phone:     '📱 Phone Detected',
     gaze_away:      '👁️ Eyes Off Screen',
+    gaze_down:      '👁️ Looking Down',
     copy_paste:     '📋 Copy/Paste',
     devtools:       '🛠️ DevTools',
     screenshot:     '📸 Screenshot',
@@ -38,7 +39,7 @@ const VIOLATION_LABELS = {
     webcam_transfer:'📷 Webcam Error',
 };
 
-const GAZE_TYPES = ['gaze_away', 'no_person'];
+const GAZE_TYPES = ['gaze_away', 'gaze_down', 'no_person'];
 
 // ─── Entry Point ──────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {

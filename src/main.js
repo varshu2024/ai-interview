@@ -53,6 +53,7 @@ const VIOLATION_LABELS = {
     multiple_people: '👥 Multiple People',
     cell_phone: '📱 Phone Detected',
     gaze_away: '👁️ Eyes Off Screen',
+    gaze_down: '👁️ Looking Down',
     copy_paste: '📋 Copy/Paste Blocked',
     devtools: '🛠️ DevTools Attempt',
     screenshot: '📸 Screenshot Blocked',
@@ -245,6 +246,7 @@ function updateGazeIndicator(gazeStatus) {
         center: { label: '👁️ Looking at screen', cls: 'gaze-center' },
         left: { label: '👁️ Looking left', cls: 'gaze-left' },
         right: { label: '👁️ Looking right', cls: 'gaze-right' },
+        down: { label: '👁️ Looking down', cls: 'gaze-down' },
         away: { label: '👁️ Face not detected', cls: 'gaze-away' },
     };
 
