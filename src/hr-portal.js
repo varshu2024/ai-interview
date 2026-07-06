@@ -37,6 +37,7 @@ const VIOLATION_LABELS = {
     context_menu:   '🖱️ Right-Click',
     screen_stopped: '🖥️ Screen Stopped',
     webcam_transfer:'📷 Webcam Error',
+    periodic_snapshot: '📷 Status Snapshot',
 };
 
 const GAZE_TYPES = ['gaze_away', 'gaze_down', 'no_person'];
@@ -188,7 +189,7 @@ function renderStudentsTable() {
 
     tbody.innerHTML = students.map(s => {
         const violCount   = (s.violations || []).length;
-        const strikeCount = (s.violations || []).filter(v => !['screenshot', 'keyboard_block', 'context_menu'].includes(v.type)).length;
+        const strikeCount = (s.violations || []).filter(v => !['screenshot', 'keyboard_block', 'context_menu', 'periodic_snapshot'].includes(v.type)).length;
         const gazeCount   = (s.violations || []).filter(v => GAZE_TYPES.includes(v.type)).length;
         const maxWarn     = getMaxWarnings();
         const scoreClass  = (s.score || 0) >= 70 ? 'high' : (s.score || 0) >= 40 ? 'mid' : 'low';
@@ -242,7 +243,7 @@ function renderStudentsTable() {
 
 function buildViolationDrawer(student) {
     const violations = student.violations || [];
-    const strikeViolations = violations.filter(v => !['screenshot', 'keyboard_block', 'context_menu'].includes(v.type));
+    const strikeViolations = violations.filter(v => !['screenshot', 'keyboard_block', 'context_menu', 'periodic_snapshot'].includes(v.type));
     const gazeCount = violations.filter(v => GAZE_TYPES.includes(v.type)).length;
     const phoneCount = violations.filter(v => v.type === 'cell_phone').length;
 

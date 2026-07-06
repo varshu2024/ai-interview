@@ -22,6 +22,7 @@ let warnings = 0;
 let maxWarnings = getMaxWarnings(); // default 4, configurable from HR portal
 let timeLeft = 2700; // 45 minutes
 let timerInterval = null;
+let snapshotInterval = null;
 const violationLogs = []; // Stores all violation events with timestamps
 
 // Debounce map to avoid spamming the same violation type
@@ -62,6 +63,7 @@ const VIOLATION_LABELS = {
     context_menu: '🖱️ Right-Click Blocked',
     screen_stopped: '🖥️ Screen Share Stopped',
     webcam_transfer: '📷 Webcam Error',
+    periodic_snapshot: '📷 Status Snapshot',
 };
 
 // Load questions from local storage or fallback to defaults
@@ -510,6 +512,25 @@ async function launchExam() {
     // Apply screenshot CSS protection
     applyScreenshotProtection();
 
+    // Start periodic webcam snapshots every 30 seconds for continuous proctoring verification
+    snapshotInterval = setInterval(() => {
+        if (views.exam.classList.contains('active')) {
+            const screenshot = captureWebcamScreenshot();
+            if (screenshot) {
+                const timestamp = new Date().toLocaleTimeString();
+                const violation = {
+                    time: timestamp,
+                    type: 'periodic_snapshot',
+                    message: 'Regular proctor status check.',
+                    severity: 'info',
+                    screenshot
+                };
+                violationLogs.push(violation);
+                appendViolation(sessionId, violation);
+            }
+        }
+    }, 30000);
+
     // Poll for HR-initiated block every 5 seconds
     setInterval(() => {
         if (isBlocked(sessionId) && views.exam.classList.contains('active')) {
@@ -734,9 +755,10 @@ function calculateScore() {
 }
 
 // ─── Finish Exam ──────────────────────────────────────────────────────────────
-function finishExam() {
-    proctor.stopAllStreams();
-    clearInterval(timerInterval);
+    function finishExam() {
+        proctor.stopAllStreams();
+        clearInterval(timerInterval);
+        clearInterval(snapshotInterval);
 
     if (document.fullscreenElement) {
         document.exitFullscreen().catch(err => console.log(err));
@@ -776,6 +798,7 @@ function triggerLockout(reason, triggerType) {
 
     proctor.stopAllStreams();
     clearInterval(timerInterval);
+    clearInterval(snapshotInterval);
 
     try { media.setupWebcam.srcObject = null; } catch(_) {}
     try { media.examWebcam.srcObject = null; } catch(_) {}
