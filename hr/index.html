@@ -12,153 +12,121 @@
     <link rel="stylesheet" href="../src/hr-portal.css">
 
     <style>
-        .activity-row {
-            display: flex;
-            align-items: flex-start;
-            gap: 0.875rem;
-            padding: 0.75rem 0;
-            border-bottom: 1px solid rgba(255,255,255,0.04);
-        }
-        .activity-row:last-child { border-bottom: none; }
-        .activity-icon { font-size: 1.1rem; margin-top: 0.1rem; flex-shrink: 0; }
-        .activity-body { flex: 1; min-width: 0; }
-        .activity-title { font-size: 0.83rem; color: var(--hr-text); line-height: 1.4; }
-        .activity-msg { font-size: 0.76rem; color: var(--hr-text-muted); margin-top: 0.1rem; word-break: break-word; }
-        .activity-time { font-size: 0.72rem; color: var(--hr-text-muted); white-space: nowrap; flex-shrink: 0; font-family: monospace; }
-
         /* Violation drawer row */
         .violation-drawer-row { background: transparent !important; cursor: default; }
         .violation-drawer-row:hover { background: transparent !important; }
 
-        /* ── HR Login Gate ── */
+        /* Hide main app while locked */
+        .hr-app { display: none; }
+        .hr-app.unlocked { display: grid; }
+
+        /* Password change */
+        .secret-code-change {
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+        .secret-code-change input[type="password"] {
+            width: 100%;
+            padding: 0.6rem 0.875rem;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.875rem;
+            color: #111827;
+            background: #fff;
+            outline: none;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .secret-code-change input:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+        }
+
+        /* Logout button */
+        .logout-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.35rem 0.875rem;
+            border-radius: 6px;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #dc2626;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.14s ease;
+        }
+        .logout-btn:hover { background: #fee2e2; }
+
+        /* Login gate */
         #hr-login-gate {
             position: fixed;
             inset: 0;
+            background: #f5f6f8;
             z-index: 99999;
             display: flex;
             align-items: center;
             justify-content: center;
             flex-direction: column;
         }
-
-        /* Hide main app while locked */
-        .hr-app { display: none; }
-        .hr-app.unlocked { display: grid; }
-
-        /* Change secret code row */
-        .secret-code-change {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            flex-wrap: wrap;
-        }
-
-        .secret-code-change input[type="password"] {
-            flex: 1;
-            min-width: 140px;
-            padding: 0.55rem 0.875rem;
-            background: rgba(255,255,255,0.04);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 8px;
-            color: #f1f5f9;
-            font-family: 'Inter', sans-serif;
-            font-size: 0.88rem;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-
-        .secret-code-change input:focus {
-            border-color: rgba(99,102,241,0.5);
-        }
-
-        .logout-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.4rem;
-            padding: 0.35rem 0.875rem;
-            border-radius: 8px;
-            background: rgba(239,68,68,0.1);
-            border: 1px solid rgba(239,68,68,0.2);
-            color: #f87171;
-            font-size: 0.78rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.15s ease;
-            margin-left: auto;
-        }
-
-        .logout-btn:hover { background: rgba(239,68,68,0.2); }
-
-        /* ── Plain login form ── */
-        #hr-login-gate {
-            background: #f4f6f9;
-        }
-        #hr-login-gate::before { display: none; }
-
         .login-card {
             background: #ffffff;
-            border: 1px solid #d1d5db;
+            border: 1px solid #e5e7eb;
             border-radius: 12px;
             padding: 2.5rem 2rem;
             width: 100%;
             max-width: 360px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.07);
             display: flex;
             flex-direction: column;
-            gap: 1.1rem;
+            gap: 1rem;
         }
-
         .login-title h1 {
-            font-size: 1.3rem;
+            font-size: 1.2rem;
             font-weight: 700;
             color: #111827;
             letter-spacing: -0.02em;
             margin-bottom: 0.2rem;
         }
-
-        .login-title p {
-            font-size: 0.85rem;
-            color: #6b7280;
-        }
+        .login-title p { font-size: 0.82rem; color: #6b7280; }
 
         .plain-pw-input {
             width: 100%;
-            padding: 0.75rem 1rem;
-            border: 1px solid #d1d5db;
-            border-radius: 8px;
+            padding: 0.65rem 0.875rem;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
             font-family: 'Inter', sans-serif;
-            font-size: 0.95rem;
+            font-size: 0.9rem;
             color: #111827;
-            background: #f9fafb;
-            outline: none;
-            transition: border-color 0.18s ease, box-shadow 0.18s ease;
-        }
-
-        .plain-pw-input:focus {
-            border-color: #6366f1;
-            box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
             background: #fff;
+            outline: none;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
         }
-
+        .plain-pw-input:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+        }
         .plain-login-btn {
             width: 100%;
-            padding: 0.75rem;
-            background: #4f46e5;
+            padding: 0.7rem;
+            background: #2563eb;
             color: #fff;
             font-family: 'Inter', sans-serif;
-            font-size: 0.95rem;
+            font-size: 0.9rem;
             font-weight: 600;
             border: none;
-            border-radius: 8px;
+            border-radius: 6px;
             cursor: pointer;
-            transition: background 0.18s ease;
+            transition: background 0.15s ease;
         }
-
-        .plain-login-btn:hover { background: #4338ca; }
-        .plain-login-btn:active { background: #3730a3; }
+        .plain-login-btn:hover  { background: #1d4ed8; }
+        .plain-login-btn:active { background: #1e40af; }
 
         .login-error-msg {
-            font-size: 0.82rem;
+            font-size: 0.8rem;
             color: #dc2626;
             text-align: center;
             min-height: 1.1em;
@@ -166,11 +134,11 @@
             opacity: 0;
             transition: opacity 0.2s ease;
         }
-
         .login-error-msg.visible { opacity: 1; }
     </style>
 </head>
 <body>
+
 
 <!-- ==================== HR LOGIN GATE ==================== -->
 <div id="hr-login-gate">
