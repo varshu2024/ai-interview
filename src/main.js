@@ -881,6 +881,24 @@ window.addEventListener('DOMContentLoaded', () => {
 
     loadActiveQuestions();
 
+    // Fetch latest questions and blocklist from remote cloud database on startup
+    fetch('https://kvdb.io/aifocused_proctor_db_x791a82/questions')
+        .then(res => res.ok ? res.json() : null)
+        .then(questions => {
+            if (questions && Array.isArray(questions)) {
+                localStorage.setItem('proctor_exam_questions', JSON.stringify(questions));
+                loadActiveQuestions();
+            }
+        }).catch(err => console.log("Remote questions sync skipped, using local cache:", err));
+
+    fetch('https://kvdb.io/aifocused_proctor_db_x791a82/blocked_ids')
+        .then(res => res.ok ? res.json() : null)
+        .then(blocked => {
+            if (blocked && Array.isArray(blocked)) {
+                localStorage.setItem('hr_blocked_ids', JSON.stringify(blocked));
+            }
+        }).catch(err => console.log("Remote blocklist sync skipped, using local cache:", err));
+
     // Set initial active view to registration
     Object.values(views).forEach(view => {
         if (view) view.classList.remove('active');

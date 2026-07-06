@@ -67,12 +67,16 @@ export function getStudent(sessionId) {
 export function upsertStudent(session) {
     const all = getAllStudents();
     const idx = all.findIndex(s => s.sessionId === session.sessionId);
+    let updatedSession = {};
     if (idx >= 0) {
         all[idx] = { ...all[idx], ...session };
+        updatedSession = all[idx];
     } else {
         all.push(session);
+        updatedSession = session;
     }
     writeJSON(KEYS.STUDENTS, all);
+    syncStudentToRemote(updatedSession);
 }
 
 export function appendViolation(sessionId, violation) {
@@ -82,6 +86,7 @@ export function appendViolation(sessionId, violation) {
         student.violations = student.violations || [];
         student.violations.push(violation);
         writeJSON(KEYS.STUDENTS, all);
+        syncStudentToRemote(student);
     }
 }
 
@@ -92,11 +97,13 @@ export function updateStudentStatus(sessionId, status, extra = {}) {
         student.status = status;
         Object.assign(student, extra);
         writeJSON(KEYS.STUDENTS, all);
+        syncStudentToRemote(student);
     }
 }
 
 export function clearAllStudents() {
     writeJSON(KEYS.STUDENTS, []);
+    clearRemoteStudents();
 }
 
 // ─── Block List ────────────────────────────────────────────────────────────────
@@ -114,6 +121,7 @@ export function blockStudent(sessionId) {
     if (!blocked.includes(sessionId)) {
         blocked.push(sessionId);
         writeJSON(KEYS.BLOCKED, blocked);
+        syncBlocklistToRemote(blocked);
     }
     updateStudentStatus(sessionId, 'blocked', { endTime: new Date().toISOString() });
 }
@@ -121,6 +129,7 @@ export function blockStudent(sessionId) {
 export function unblockStudent(sessionId) {
     const blocked = getBlockedIds().filter(id => id !== sessionId);
     writeJSON(KEYS.BLOCKED, blocked);
+    syncBlocklistToRemote(blocked);
     updateStudentStatus(sessionId, 'active');
 }
 
@@ -132,6 +141,7 @@ export function getQuestions() {
 
 export function saveQuestions(questions) {
     writeJSON(KEYS.QUESTIONS, questions);
+    syncQuestionsToRemote(questions);
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
@@ -151,4 +161,90 @@ export function generateSessionId() {
     return 'SEC-' + Array.from({ length: 20 }, () =>
         Math.floor(Math.random() * 16).toString(16)
     ).join('').toUpperCase();
+}
+
+// ─── Remote Sync Functions (kvdb.io integration) ──────────────────────────────
+
+const BUCKET_URL = 'https://kvdb.io/aifocused_proctor_db_x791a82';
+
+export async function syncStudentToRemote(student) {
+    try {
+        await fetch(`${BUCKET_URL}/student_${student.sessionId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(student)
+        });
+    } catch (e) {
+        console.error('Remote student sync failed:', e);
+    }
+}
+
+export async function syncBlocklistToRemote(blocked) {
+    try {
+        await fetch(`${BUCKET_URL}/blocked_ids`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(blocked)
+        });
+    } catch (e) {
+        console.error('Remote blocklist sync failed:', e);
+    }
+}
+
+export async function syncQuestionsToRemote(questions) {
+    try {
+        await fetch(`${BUCKET_URL}/questions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(questions)
+        });
+    } catch (e) {
+        console.error('Remote questions sync failed:', e);
+    }
+}
+
+export async function syncAllFromRemote() {
+    try {
+        // 1. Fetch all student keys and values in one request
+        const res = await fetch(`${BUCKET_URL}/?prefix=student_&values=true&format=json`);
+        if (res.ok) {
+            const data = await res.json(); // Array of [key, value]
+            const students = data.map(item => {
+                const val = item[1];
+                return typeof val === 'string' ? JSON.parse(val) : val;
+            });
+            writeJSON(KEYS.STUDENTS, students);
+        }
+
+        // 2. Fetch blocklist
+        const blockRes = await fetch(`${BUCKET_URL}/blocked_ids`);
+        if (blockRes.ok) {
+            const blocked = await blockRes.json();
+            writeJSON(KEYS.BLOCKED, blocked);
+        }
+
+        // 3. Fetch questions
+        const questionsRes = await fetch(`${BUCKET_URL}/questions`);
+        if (questionsRes.ok) {
+            const questions = await questionsRes.json();
+            writeJSON(KEYS.QUESTIONS, questions);
+        }
+    } catch (e) {
+        console.error('Failed to sync from remote database:', e);
+    }
+}
+
+export async function clearRemoteStudents() {
+    try {
+        const res = await fetch(`${BUCKET_URL}/?prefix=student_&format=json`);
+        if (res.ok) {
+            const keys = await res.json();
+            for (const key of keys) {
+                await fetch(`${BUCKET_URL}/${key}`, { method: 'DELETE' }).catch(() => {});
+            }
+        }
+        await fetch(`${BUCKET_URL}/blocked_ids`, { method: 'DELETE' }).catch(() => {});
+    } catch (e) {
+        console.error('Failed to clear remote data:', e);
+    }
 }

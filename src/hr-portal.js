@@ -6,7 +6,7 @@
 import {
     getAllStudents, blockStudent, unblockStudent, getBlockedIds,
     getQuestions, saveQuestions, getMaxWarnings, saveMaxWarnings,
-    clearAllStudents, upsertStudent
+    clearAllStudents, upsertStudent, syncAllFromRemote
 } from './hr-data.js';
 import { questions as defaultQuestions } from './questions.js';
 
@@ -49,15 +49,19 @@ document.addEventListener('DOMContentLoaded', () => {
     setupSettings();
     setupClearData();
 
-    // Initial render
-    renderDashboard();
-    renderStudentsTable();
-    renderQuestionsPanel();
+    // Initial sync and render
+    syncAllFromRemote().then(() => {
+        renderDashboard();
+        renderStudentsTable();
+        renderQuestionsPanel();
+    });
 
     // Auto-refresh every 3 seconds
     refreshTimer = setInterval(() => {
-        renderDashboard();
-        renderStudentsTable();
+        syncAllFromRemote().then(() => {
+            renderDashboard();
+            renderStudentsTable();
+        });
     }, 3000);
 });
 
