@@ -171,12 +171,15 @@ function renderStudentsTable() {
         students = students.filter(s => s.status === filterStatus);
     }
 
-    // Apply search
+    // Apply search — searches name, sessionId, email, phone, location
     if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         students = students.filter(s =>
-            (s.name || '').toLowerCase().includes(q) ||
-            (s.sessionId || '').toLowerCase().includes(q)
+            (s.name     || '').toLowerCase().includes(q) ||
+            (s.sessionId|| '').toLowerCase().includes(q) ||
+            (s.email    || '').toLowerCase().includes(q) ||
+            (s.phone    || '').toLowerCase().includes(q) ||
+            (s.location || '').toLowerCase().includes(q)
         );
     }
 
@@ -264,8 +267,34 @@ function buildViolationDrawer(student) {
         </div>
     `;
 
+    // ── Full candidate profile card at drawer top ─────────────────────────────
+    const profileCard = `
+        <div style="
+            display:flex; flex-wrap:wrap; gap:1.25rem; align-items:flex-start;
+            background:rgba(99,102,241,0.07); border:1px solid rgba(99,102,241,0.18);
+            border-radius:12px; padding:1rem 1.25rem; margin-bottom:1.1rem;
+        ">
+            <div style="flex:1;min-width:220px">
+                <div style="font-size:1.05rem;font-weight:700;color:#e2e8f0;margin-bottom:0.3rem">👤 ${escHtml(student.name || 'Unknown')}</div>
+                <div style="font-size:0.8rem;color:#94a3b8">🆔 Session: <code style="color:#a5b4fc">${escHtml(student.sessionId || '—')}</code></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:0.35rem;font-size:0.82rem;color:#94a3b8">
+                <div>📧 <span style="color:#e2e8f0">${escHtml(student.email || '—')}</span></div>
+                <div>📞 <span style="color:#e2e8f0">${escHtml(student.phone || '—')}</span></div>
+                <div>📍 <span style="color:#e2e8f0">${escHtml(student.location || '—')}</span></div>
+                <div>📅 <span style="color:#e2e8f0">${escHtml(student.date || '—')}</span></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:0.35rem;font-size:0.82rem;color:#94a3b8">
+                <div>🕐 Started: <span style="color:#e2e8f0">${student.startTime ? new Date(student.startTime).toLocaleString() : '—'}</span></div>
+                <div>🏁 Ended: <span style="color:#e2e8f0">${student.endTime ? new Date(student.endTime).toLocaleString() : 'In Progress'}</span></div>
+                <div>📊 Status: <span style="color:#e2e8f0">${student.status || '—'}</span></div>
+            </div>
+        </div>
+    `;
+
     if (violations.length === 0) {
         return `
+            ${profileCard}
             <h4>📋 Cheating / Violation Details</h4>
             ${gazeStatsHtml}
             <div class="no-violations">✅ No violations recorded for this session.</div>
@@ -292,6 +321,7 @@ function buildViolationDrawer(student) {
     }).join('');
 
     return `
+        ${profileCard}
         <h4>📋 Cheating / Violation Details — ${escHtml(student.name || 'Unknown')}</h4>
         ${gazeStatsHtml}
         <ul class="violation-list-hr" style="margin-top:0.75rem; padding-left: 0;">${violationListHtml}</ul>
