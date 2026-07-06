@@ -329,19 +329,17 @@ function handleProctorViolation(type, message, severity) {
         return;
     }
 
+    // Capture webcam screenshot for all violations to provide visual proof in the HR dashboard
+    const screenshot = captureWebcamScreenshot();
+
     // ── Screenshot violations: log but don't count as strike ─────────────────
     if (type === 'screenshot') {
-        violationLogs.push({ time: timestamp, type, message, severity: 'info' });
+        const viol = { time: timestamp, type, message, severity: 'info', screenshot };
+        violationLogs.push(viol);
         showToast('📸 Screenshot Blocked', message, null, 'info');
         // Write to HR data (informational, no strike)
-        appendViolation(sessionId, { time: timestamp, type, message, severity: 'info' });
+        appendViolation(sessionId, viol);
         return;
-    }
-
-    // Capture webcam screenshot when candidate looks away
-    let screenshot = null;
-    if (type === 'gaze_away' || type === 'gaze_down') {
-        screenshot = captureWebcamScreenshot();
     }
 
     // ── All other violations become strikes ───────────────────────────────────
@@ -770,11 +768,6 @@ function finishExam() {
         ).join('');
     }
 
-    // Show score on success screen
-    const scoreDisplay = document.getElementById('success-score-display');
-    if (scoreDisplay) {
-        scoreDisplay.textContent = `Your Score: ${score}% (${correct}/${mcqTotal} correct)`;
-    }
 }
 
 // ─── Lockout Screen ───────────────────────────────────────────────────────────
