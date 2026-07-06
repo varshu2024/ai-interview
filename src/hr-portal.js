@@ -254,8 +254,8 @@ function buildViolationDrawer(student) {
 
     // Live score info (available during and after exam)
     const liveScoreHtml = (student.score !== null && student.score !== undefined)
-        ? `<div class="gaze-stat-chip" style="background:rgba(16,185,129,0.15);color:#34d399;border-color:rgba(16,185,129,0.3);">✅ Score: ${student.score}% (${student.correct || 0}/${student.totalQuestions || 0})</div>`
-        : `<div class="gaze-stat-chip" style="background:rgba(99,102,241,0.12);color:#a5b4fc;border-color:rgba(99,102,241,0.2);">📝 ${student.answered || 0}/${student.totalQuestions || 0} answered (in progress)</div>`;
+        ? `<div class="gaze-stat-chip" style="background:#f0fdf4;color:#16a34a;border-color:#bbf7d0;">✅ Score: ${student.score}% (${student.correct || 0}/${student.totalQuestions || 0})</div>`
+        : `<div class="gaze-stat-chip" style="background:#eff6ff;color:#2563eb;border-color:#bfdbfe;">📝 ${student.answered || 0}/${student.totalQuestions || 0} answered (in progress)</div>`;
 
     const gazeStatsHtml = `
         <div class="gaze-stats-row">
@@ -263,31 +263,32 @@ function buildViolationDrawer(student) {
             <span class="gaze-stat-chip eye">👁️ Gaze violations: ${gazeCount}</span>
             <span class="gaze-stat-chip warn">📱 Phone detections: ${phoneCount}</span>
             <span class="gaze-stat-chip warn">⚠️ Total strikes: ${strikeViolations.length}</span>
-            <span class="gaze-stat-chip" style="opacity:0.6">📷 Snapshots: ${snapCount}</span>
+            <span class="gaze-stat-chip">📷 Snapshots: ${snapCount}</span>
         </div>
     `;
 
     // ── Full candidate profile card at drawer top ─────────────────────────────
     const profileCard = `
         <div style="
-            display:flex; flex-wrap:wrap; gap:1.25rem; align-items:flex-start;
-            background:rgba(99,102,241,0.07); border:1px solid rgba(99,102,241,0.18);
-            border-radius:12px; padding:1rem 1.25rem; margin-bottom:1.1rem;
+            display:flex; flex-wrap:wrap; gap:1.5rem; align-items:flex-start;
+            background:#ffffff; border:1px solid #e5e7eb;
+            border-radius:10px; padding:1.1rem 1.4rem; margin-bottom:1.1rem;
+            box-shadow:0 1px 4px rgba(0,0,0,0.06);
         ">
-            <div style="flex:1;min-width:220px">
-                <div style="font-size:1.05rem;font-weight:700;color:#e2e8f0;margin-bottom:0.3rem">👤 ${escHtml(student.name || 'Unknown')}</div>
-                <div style="font-size:0.8rem;color:#94a3b8">🆔 Session: <code style="color:#a5b4fc">${escHtml(student.sessionId || '—')}</code></div>
+            <div style="flex:1;min-width:200px">
+                <div style="font-size:1rem;font-weight:700;color:#111827;margin-bottom:0.25rem">👤 ${escHtml(student.name || 'Unknown')}</div>
+                <div style="font-size:0.78rem;color:#6b7280">🆔 <code style="color:#2563eb;background:#eff6ff;padding:0.1rem 0.3rem;border-radius:4px">${escHtml(student.sessionId || '—')}</code></div>
             </div>
-            <div style="display:flex;flex-direction:column;gap:0.35rem;font-size:0.82rem;color:#94a3b8">
-                <div>📧 <span style="color:#e2e8f0">${escHtml(student.email || '—')}</span></div>
-                <div>📞 <span style="color:#e2e8f0">${escHtml(student.phone || '—')}</span></div>
-                <div>📍 <span style="color:#e2e8f0">${escHtml(student.location || '—')}</span></div>
-                <div>📅 <span style="color:#e2e8f0">${escHtml(student.date || '—')}</span></div>
+            <div style="display:flex;flex-direction:column;gap:0.3rem;font-size:0.82rem;color:#374151">
+                <div>📧 <strong style="color:#111827">${escHtml(student.email || '—')}</strong></div>
+                <div>📞 <strong style="color:#111827">${escHtml(student.phone || '—')}</strong></div>
+                <div>📍 <strong style="color:#111827">${escHtml(student.location || '—')}</strong></div>
+                <div>📅 <strong style="color:#111827">${escHtml(student.date || '—')}</strong></div>
             </div>
-            <div style="display:flex;flex-direction:column;gap:0.35rem;font-size:0.82rem;color:#94a3b8">
-                <div>🕐 Started: <span style="color:#e2e8f0">${student.startTime ? new Date(student.startTime).toLocaleString() : '—'}</span></div>
-                <div>🏁 Ended: <span style="color:#e2e8f0">${student.endTime ? new Date(student.endTime).toLocaleString() : 'In Progress'}</span></div>
-                <div>📊 Status: <span style="color:#e2e8f0">${student.status || '—'}</span></div>
+            <div style="display:flex;flex-direction:column;gap:0.3rem;font-size:0.82rem;color:#374151">
+                <div>🕐 Started: <strong style="color:#111827">${student.startTime ? new Date(student.startTime).toLocaleString() : '—'}</strong></div>
+                <div>🏁 Ended: <strong style="color:#111827">${student.endTime ? new Date(student.endTime).toLocaleString() : 'In Progress'}</strong></div>
+                <div>📊 Status: <strong style="color:#111827">${student.status || '—'}</strong></div>
             </div>
         </div>
     `;
