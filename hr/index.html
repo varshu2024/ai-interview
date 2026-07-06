@@ -424,6 +424,13 @@
                             </div>
                             <input type="number" id="setting-max-warnings" min="1" max="10" value="4">
                         </div>
+                        <div class="settings-row" style="margin-top:1rem">
+                            <div class="settings-row-info">
+                                <label>⏱️ Total Exam Duration (minutes)</label>
+                                <p>Override the total exam timer. Set to <strong>0</strong> to use per-question time limits instead. This applies to all new candidates starting the exam.</p>
+                            </div>
+                            <input type="number" id="setting-exam-duration" min="0" max="300" value="0" placeholder="0 = per-question">
+                        </div>
                     </div>
                     <div style="margin-top:1.25rem;display:flex;gap:0.75rem">
                         <button class="hr-btn hr-btn-primary" id="btn-save-settings">💾 Save Settings</button>

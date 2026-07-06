@@ -6,6 +6,7 @@
 import {
     getAllStudents, blockStudent, unblockStudent, getBlockedIds,
     getQuestions, saveQuestions, getMaxWarnings, saveMaxWarnings,
+    getExamDuration, saveExamDuration,
     clearAllStudents, upsertStudent, syncAllFromRemote
 } from './hr-data.js';
 import { questions as defaultQuestions } from './questions.js';
@@ -246,12 +247,20 @@ function buildViolationDrawer(student) {
     const strikeViolations = violations.filter(v => !['screenshot', 'keyboard_block', 'context_menu', 'periodic_snapshot'].includes(v.type));
     const gazeCount = violations.filter(v => GAZE_TYPES.includes(v.type)).length;
     const phoneCount = violations.filter(v => v.type === 'cell_phone').length;
+    const snapCount  = violations.filter(v => v.type === 'periodic_snapshot').length;
+
+    // Live score info (available during and after exam)
+    const liveScoreHtml = (student.score !== null && student.score !== undefined)
+        ? `<div class="gaze-stat-chip" style="background:rgba(16,185,129,0.15);color:#34d399;border-color:rgba(16,185,129,0.3);">✅ Score: ${student.score}% (${student.correct || 0}/${student.totalQuestions || 0})</div>`
+        : `<div class="gaze-stat-chip" style="background:rgba(99,102,241,0.12);color:#a5b4fc;border-color:rgba(99,102,241,0.2);">📝 ${student.answered || 0}/${student.totalQuestions || 0} answered (in progress)</div>`;
 
     const gazeStatsHtml = `
         <div class="gaze-stats-row">
+            ${liveScoreHtml}
             <span class="gaze-stat-chip eye">👁️ Gaze violations: ${gazeCount}</span>
             <span class="gaze-stat-chip warn">📱 Phone detections: ${phoneCount}</span>
             <span class="gaze-stat-chip warn">⚠️ Total strikes: ${strikeViolations.length}</span>
+            <span class="gaze-stat-chip" style="opacity:0.6">📷 Snapshots: ${snapCount}</span>
         </div>
     `;
 
@@ -558,15 +567,24 @@ function saveQuestionFromModal() {
 function renderSettings() {
     const maxWarnInput = document.getElementById('setting-max-warnings');
     if (maxWarnInput) maxWarnInput.value = getMaxWarnings();
+    const durInput = document.getElementById('setting-exam-duration');
+    if (durInput) durInput.value = getExamDuration();
 }
 
 function setupSettings() {
     const saveBtn = document.getElementById('btn-save-settings');
     if (saveBtn) {
-        saveBtn.addEventListener('click', () => {
+        saveBtn.addEventListener('click', async () => {
             const val = parseInt(document.getElementById('setting-max-warnings').value, 10);
             if (val >= 1 && val <= 10) {
                 saveMaxWarnings(val);
+            }
+            const durVal = parseInt(document.getElementById('setting-exam-duration').value, 10);
+            if (!isNaN(durVal) && durVal >= 0 && durVal <= 300) {
+                await saveExamDuration(durVal);
+                showHrToast(`⏱️ Exam duration set to ${durVal === 0 ? 'per-question limits' : durVal + ' minutes'}.`, 'success');
+            }
+            if (val >= 1 && val <= 10) {
                 showHrToast(`Max warnings set to ${val}.`, 'success');
             }
         });

@@ -3,7 +3,7 @@ import { ProctorEngine } from './proctor.js';
 import {
     getAllStudents, upsertStudent, appendViolation, updateStudentStatus,
     isBlocked, blockStudent, getBlockedIds, getQuestions,
-    generateSessionId, getMaxWarnings
+    generateSessionId, getMaxWarnings, getExamDuration
 } from './hr-data.js';
 
 // ─── Session Identity ─────────────────────────────────────────────────────────
@@ -504,7 +504,11 @@ async function launchExam() {
     });
 
     proctor.startEnvironmentMonitoring();
-    timeLeft = activeQuestions.reduce((sum, q) => sum + (q.timeLimit || (q.type === 'text' ? 1500 : 300)), 0);
+    // Use HR-configured global timer if set; otherwise sum per-question limits
+    const hrDuration = getExamDuration(); // in minutes (0 = use per-question limits)
+    timeLeft = hrDuration > 0
+        ? hrDuration * 60
+        : activeQuestions.reduce((sum, q) => sum + (q.timeLimit || (q.type === 'text' ? 1500 : 300)), 0);
     startTimer();
     buildQuestionGrid();
     loadQuestion(0);
@@ -677,9 +681,23 @@ function loadQuestion(index) {
                 optBtn.classList.add('selected');
                 answers[index] = optIdx;
                 updateQuestionStatus(index, 'answered');
-                // Update answered count in HR data
+                // ── Push live progress + score to HR dashboard in real-time ──────
                 const answeredCount = Object.keys(answers).length;
-                upsertStudent({ sessionId, name: studentName, answered: answeredCount });
+                // Recalculate running score so HR sees live marks
+                let liveCorrect = 0;
+                activeQuestions.forEach((aq, ai) => {
+                    if (aq.type === 'single' && answers[ai] === aq.answer) liveCorrect++;
+                });
+                const liveScore = answeredCount > 0
+                    ? Math.round((liveCorrect / activeQuestions.filter(aq => aq.type === 'single').length) * 100)
+                    : null;
+                upsertStudent({
+                    sessionId,
+                    name: studentName,
+                    answered: answeredCount,
+                    correct: liveCorrect,
+                    score: liveScore,
+                });
             });
 
             questionView.options.appendChild(optBtn);
@@ -899,7 +917,14 @@ window.addEventListener('DOMContentLoaded', () => {
 
     loadActiveQuestions();
 
-    // Fetch latest questions and blocklist from remote cloud database on startup
+    // Fetch latest questions, blocklist, and exam duration from remote cloud database on startup
+    fetch('https://kvdb.io/aifocused_proctor_db_x791a82/exam_duration')
+        .then(res => res.ok ? res.json() : null)
+        .then(dur => {
+            if (dur !== null && typeof dur === 'number' && dur > 0) {
+                localStorage.setItem('hr_exam_duration', String(dur));
+            }
+        }).catch(() => {}); // silently ignore; local fallback used
     fetch('https://kvdb.io/aifocused_proctor_db_x791a82/questions')
         .then(res => res.ok ? res.json() : null)
         .then(questions => {

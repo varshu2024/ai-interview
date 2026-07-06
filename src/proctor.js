@@ -298,12 +298,13 @@ export class ProctorEngine {
                     }
                 }
 
-                // Fire violation after looking away for ~3 seconds (6 intervals × 500ms)
-                if (consecutiveOffGaze >= 6 && (gazeStatus === 'left' || gazeStatus === 'right')) {
-                    if (consecutiveOffGaze === 6 || consecutiveOffGaze % 12 === 0) {
+                // Fire violation after looking left/right continuously for ~15 seconds (30 intervals × 500ms)
+                // Repeat every ~7.5 seconds (15 ticks) to avoid spam
+                if (consecutiveOffGaze >= 30 && (gazeStatus === 'left' || gazeStatus === 'right')) {
+                    if (consecutiveOffGaze === 30 || consecutiveOffGaze % 15 === 0) {
                         this.callbacks.onViolation(
                             'gaze_away',
-                            `Eyes detected looking ${gazeStatus} — candidate may be reading from an external source.`,
+                            `Eyes detected looking ${gazeStatus} for ${Math.round(consecutiveOffGaze * 0.5)}s — candidate may be reading from an external source.`,
                             'warning'
                         );
                     }

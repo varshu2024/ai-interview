@@ -8,10 +8,11 @@ import { questions as defaultQuestions } from './questions.js';
 
 // ─── Storage Keys ─────────────────────────────────────────────────────────────
 export const KEYS = {
-    STUDENTS:   'hr_students',          // Array<StudentSession>
-    QUESTIONS:  'proctor_exam_questions', // Array<Question> (shared with exam page)
-    BLOCKED:    'hr_blocked_ids',       // Set<string> (session IDs that are blocked)
-    MAX_WARN:   'hr_max_warnings',      // number (violation threshold, default 4)
+    STUDENTS:      'hr_students',           // Array<StudentSession>
+    QUESTIONS:     'proctor_exam_questions', // Array<Question> (shared with exam page)
+    BLOCKED:       'hr_blocked_ids',        // Set<string> (session IDs that are blocked)
+    MAX_WARN:      'hr_max_warnings',       // number (violation threshold, default 4)
+    EXAM_DURATION: 'hr_exam_duration',      // number (total exam duration in minutes, default 30)
 };
 
 // ─── Student Session Schema ────────────────────────────────────────────────────
@@ -155,6 +156,29 @@ export function getMaxWarnings() {
 
 export function saveMaxWarnings(n) {
     localStorage.setItem(KEYS.MAX_WARN, String(n));
+}
+
+/**
+ * getExamDuration — Total exam time limit in MINUTES (set by HR).
+ * Returns 0 if not set (0 = use per-question time limits from questions).
+ */
+export function getExamDuration() {
+    const stored = localStorage.getItem(KEYS.EXAM_DURATION);
+    return stored ? parseInt(stored, 10) : 0;
+}
+
+export async function saveExamDuration(minutes) {
+    localStorage.setItem(KEYS.EXAM_DURATION, String(minutes));
+    // Sync to remote so candidate portals pick up the new duration
+    try {
+        await fetch(`${BUCKET_URL}/exam_duration`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(minutes)
+        });
+    } catch (e) {
+        console.error('Remote exam duration sync failed:', e);
+    }
 }
 
 // ─── Generate Session ID ───────────────────────────────────────────────────────
