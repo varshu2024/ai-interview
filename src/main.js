@@ -473,6 +473,7 @@ async function launchExam() {
     });
 
     proctor.startEnvironmentMonitoring();
+    timeLeft = activeQuestions.reduce((sum, q) => sum + (q.timeLimit || (q.type === 'text' ? 1500 : 300)), 0);
     startTimer();
     buildQuestionGrid();
     loadQuestion(0);
@@ -562,6 +563,14 @@ function applyScreenshotProtection() {
 
 // ─── Timer ────────────────────────────────────────────────────────────────────
 function startTimer() {
+    // Set initial text immediately
+    const minutes = Math.floor(timeLeft / 60);
+    const seconds = timeLeft % 60;
+    indicators.timer.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    if (timeLeft < 300) {
+        indicators.timer.style.color = '#ef4444';
+    }
+
     timerInterval = setInterval(() => {
         timeLeft--;
         if (timeLeft <= 0) {

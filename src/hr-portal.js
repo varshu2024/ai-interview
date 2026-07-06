@@ -366,6 +366,7 @@ function renderQuestionsPanel() {
                     <div class="qm-meta">
                         <span class="qm-type-badge">${q.type === 'single' ? '⊙ Multiple Choice' : '✏️ Text'}</span>
                         <span class="qm-opts-count">${optsSummary}</span>
+                        <span class="qm-time-badge" style="font-size:0.72rem;background:rgba(255,255,255,0.06);padding:0.1rem 0.4rem;border-radius:4px;color:var(--hr-text-secondary)">⏱️ ${q.timeLimit || (q.type === 'text' ? 1500 : 300)}s</span>
                         ${q.answer !== null && q.answer !== undefined ? `<span style="font-size:0.72rem;color:var(--hr-success)">✓ Answer: ${String.fromCharCode(65 + q.answer)}</span>` : ''}
                     </div>
                 </div>
@@ -410,13 +411,16 @@ function openQuestionModal(q = null, editIdx = null) {
 
     const typeSelect = document.getElementById('qm-type');
     const textInput  = document.getElementById('qm-text');
+    const timeLimitInput = document.getElementById('qm-time-limit');
 
     if (q) {
         typeSelect.value = q.type || 'single';
         textInput.value  = q.text || '';
+        if (timeLimitInput) timeLimitInput.value = q.timeLimit || (q.type === 'text' ? 1500 : 300);
     } else {
         typeSelect.value = 'single';
         textInput.value  = '';
+        if (timeLimitInput) timeLimitInput.value = 300;
     }
 
     updateModalOptions(q);
@@ -507,6 +511,9 @@ function saveQuestionFromModal() {
         });
     }
 
+    const timeLimitInput = document.getElementById('qm-time-limit');
+    const qTimeLimit = timeLimitInput ? parseInt(timeLimitInput.value, 10) || (qType === 'text' ? 1500 : 300) : (qType === 'text' ? 1500 : 300);
+
     const stored = getQuestions();
     const questions = (stored && stored.length > 0) ? stored : JSON.parse(JSON.stringify(defaultQuestions));
 
@@ -516,6 +523,7 @@ function saveQuestionFromModal() {
         text: qText,
         options,
         answer,
+        timeLimit: qTimeLimit,
     };
 
     if (currentEditIndex !== null) {

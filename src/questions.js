@@ -9,7 +9,8 @@ export const questions = [
       "The combination of a function bundled together with references to its lexical environment, allowing it to access outer scope variables even after the outer function has returned.",
       "A security mechanism that prevents external scripts from modifying local variables of a given function."
     ],
-    answer: 2
+    answer: 2,
+    timeLimit: 300
   },
   {
     id: 2,
@@ -21,7 +22,8 @@ export const questions = [
       "Concurrency, Atomicity, and Performance are inversely proportional.",
       "Calculated memory limits, Allocated CPU cycles, and Peak read-rates must remain balanced."
     ],
-    answer: 1
+    answer: 1,
+    timeLimit: 300
   },
   {
     id: 3,
@@ -33,7 +35,8 @@ export const questions = [
       "There is no functional difference; they are executed sequentially in the order they are registered in the global execution context.",
       "Macrotasks are executed in parallel using Web Workers, while microtasks run strictly on the main single thread."
     ],
-    answer: 1
+    answer: 1,
+    timeLimit: 300
   },
   {
     id: 4,
@@ -45,13 +48,15 @@ export const questions = [
       "404 Not Found",
       "503 Service Unavailable"
     ],
-    answer: 0
+    answer: 0,
+    timeLimit: 300
   },
   {
     id: 5,
     type: "text",
     text: "Explain how you would optimize a web application that suffers from slow initial load times and high latency. (Write your technical design proposal below)",
     options: [], // Text question has no pre-defined multiple choice options
-    answer: null
+    answer: null,
+    timeLimit: 1500
   }
 ];

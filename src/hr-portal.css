@@ -804,6 +804,7 @@ html, body {
 }
 
 .hr-form-group input[type="text"],
+.hr-form-group input[type="number"],
 .hr-form-group textarea,
 .hr-form-group select {
     width: 100%;
