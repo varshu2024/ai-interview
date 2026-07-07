@@ -403,12 +403,11 @@ export async function syncAllFromRemote() {
         const questionsDoc = await getDoc(doc(db, "settings", "questions"));
         if (questionsDoc.exists()) {
             const qData = questionsDoc.data();
-            if (qData.list && Array.isArray(qData.list) && qData.list.length === 20) {
-                writeJSON(KEYS.QUESTIONS, defaultQuestions);
-                await syncQuestionsToRemote(defaultQuestions);
-            } else if (qData.list && Array.isArray(qData.list) && qData.list.length > 0) {
+            if (qData.list && Array.isArray(qData.list) && qData.list.length > 0) {
+                // Always use what is stored in Firestore — do not override with defaults
                 writeJSON(KEYS.QUESTIONS, qData.list);
             } else {
+                // Nothing in Firestore yet — seed with defaults
                 writeJSON(KEYS.QUESTIONS, defaultQuestions);
                 await syncQuestionsToRemote(defaultQuestions);
             }

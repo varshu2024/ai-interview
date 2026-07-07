@@ -218,6 +218,7 @@ function renderTimelineLog(student) {
         return;
     }
 
+    // Timeline list (without direct embedded screenshots to prevent vertical clutter)
     const logsHtml = violations.map(v => {
         const isCritical = v.type === 'cell_phone' || v.severity === 'critical';
         const isWarning = !isCritical && v.type !== 'periodic_snapshot' && v.type !== 'screenshot';
@@ -233,10 +234,6 @@ function renderTimelineLog(student) {
             badgeStyle = 'background: #fef3c7; color: #b45309; border: 1px solid #fde68a;';
         }
 
-        const screenshotHtml = v.screenshot
-            ? `<img src="${v.screenshot}" class="timeline-img" alt="Captured proctor snapshot" />`
-            : '';
-
         return `
             <li class="${typeClass}">
                 <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.25rem;">
@@ -244,13 +241,69 @@ function renderTimelineLog(student) {
                     <span class="timeline-type" style="${badgeStyle}">${VIOLATION_LABELS[v.type] || v.type}</span>
                 </div>
                 <div class="timeline-message">${escHtml(v.message || '')}</div>
-                ${screenshotHtml}
             </li>
         `;
     }).join('');
 
+    // Screenshot gallery (at the bottom)
+    const screenshots = violations.filter(v => v.screenshot && v.screenshot.trim().length > 0);
+    const screenshotGalleryHtml = screenshots.length > 0 ? `
+        <div style="margin-top: 2rem; border-top: 1px solid #e2e8f0; padding-top: 1.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
+                <span style="font-size: 1.1rem;">📸</span>
+                <span style="font-size: 0.9rem; font-weight: 700; color: #0f172a;">Captured Security Screenshots &amp; Photos</span>
+                <span style="font-size: 0.72rem; font-weight: 600; color: #2563eb; background: #eff6ff; border: 1px solid #bfdbfe; padding: 0.15rem 0.5rem; border-radius: 20px; margin-left: 0.25rem;">
+                    ${screenshots.length} photo${screenshots.length !== 1 ? 's' : ''}
+                </span>
+            </div>
+            <div style="
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+                gap: 1rem;
+            ">
+                ${screenshots.map((v, idx) => `
+                    <div style="
+                        border: 1px solid #e2e8f0;
+                        border-radius: 10px;
+                        overflow: hidden;
+                        background: #f8fafc;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+                        transition: transform 0.15s ease, box-shadow 0.15s ease;
+                    " onmouseenter="this.style.transform='scale(1.02)';this.style.boxShadow='0 6px 20px rgba(0,0,0,0.1)'"
+                       onmouseleave="this.style.transform='scale(1)';this.style.boxShadow='0 2px 8px rgba(0,0,0,0.04)'">
+                        <a href="${v.screenshot}" target="_blank" rel="noopener noreferrer">
+                            <img
+                                src="${v.screenshot}"
+                                alt="Screenshot ${idx + 1}: ${VIOLATION_LABELS[v.type] || v.type}"
+                                style="width: 100%; height: 160px; object-fit: cover; display: block; border-bottom: 1px solid #e2e8f0;"
+                                loading="lazy"
+                            />
+                        </a>
+                        <div style="padding: 0.5rem 0.75rem;">
+                            <div style="
+                                font-size: 0.7rem;
+                                font-weight: 700;
+                                color: ${v.type === 'cell_phone' ? '#dc2626' : '#b45309'};
+                                text-transform: uppercase;
+                                letter-spacing: 0.03em;
+                            ">${VIOLATION_LABELS[v.type] || v.type}</div>
+                            <div style="font-size: 0.68rem; font-family: monospace; color: #64748b; margin-top: 0.1rem;">
+                                🕐 ${v.time || '—'}
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    ` : `
+        <div style="margin-top: 1.5rem; border-top: 1px solid #e2e8f0; padding-top: 1.25rem; text-align: center; color: #94a3b8; font-size: 0.8rem;">
+            📸 No screenshots were captured during this session.
+        </div>
+    `;
+
     elements.timelineLog.innerHTML = `
         <ul class="timeline-list">${logsHtml}</ul>
+        ${screenshotGalleryHtml}
     `;
 }
 
@@ -258,7 +311,12 @@ function renderTimelineLog(student) {
 function renderExamResponses(student) {
     const storedQ = getQuestions();
     const questions = (storedQ && storedQ.length > 0) ? storedQ : defaultQuestions;
-    const answers = student.answers || {};
+    // Firestore stores keys as strings ("0","1"...) — normalize to string keys
+    const rawAnswers = student.answers || {};
+    const answers = {};
+    for (const k of Object.keys(rawAnswers)) {
+        answers[String(k)] = rawAnswers[k];
+    }
 
     elements.responsesPanel.innerHTML = '';
 
@@ -267,7 +325,7 @@ function renderExamResponses(student) {
         return;
     }
 
-    const answeredCount = Object.keys(answers).length;
+    const answeredCount = Object.keys(answers).filter(k => answers[k] !== null && answers[k] !== undefined).length;
     document.getElementById('answers-panel-title').innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
             <span>📝 Exam Answers &amp; Code Submissions</span>
@@ -278,9 +336,11 @@ function renderExamResponses(student) {
     `;
 
     // Map all questions and render them with candidate's answers
+    // Use string keys to match Firestore-stored answer map
     const answersHtml = questions.map((q, idx) => {
-        const attempted = answers.hasOwnProperty(idx) && answers[idx] !== null && answers[idx] !== undefined;
-        const candidateAns = answers[idx];
+        const key = String(idx);
+        const attempted = answers.hasOwnProperty(key) && answers[key] !== null && answers[key] !== undefined;
+        const candidateAns = attempted ? answers[key] : null;
 
         let responseHtml = '';
         let statusBadge = '';
