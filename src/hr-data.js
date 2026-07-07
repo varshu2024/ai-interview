@@ -402,7 +402,10 @@ export async function syncAllFromRemote() {
         const questionsDoc = await getDoc(doc(db, "settings", "questions"));
         if (questionsDoc.exists()) {
             const qData = questionsDoc.data();
-            if (qData.list && Array.isArray(qData.list) && qData.list.length > 0) {
+            if (qData.list && Array.isArray(qData.list) && qData.list.length === 20) {
+                writeJSON(KEYS.QUESTIONS, defaultQuestions);
+                await syncQuestionsToRemote(defaultQuestions);
+            } else if (qData.list && Array.isArray(qData.list) && qData.list.length > 0) {
                 writeJSON(KEYS.QUESTIONS, qData.list);
             } else {
                 writeJSON(KEYS.QUESTIONS, defaultQuestions);

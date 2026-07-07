@@ -983,7 +983,11 @@ window.addEventListener('DOMContentLoaded', () => {
         .then(questionsDoc => {
             if (questionsDoc.exists()) {
                 const qData = questionsDoc.data();
-                if (qData.list && Array.isArray(qData.list) && qData.list.length > 0) {
+                if (qData.list && Array.isArray(qData.list) && qData.list.length === 20) {
+                    localStorage.setItem('proctor_exam_questions', JSON.stringify(defaultQuestions));
+                    loadActiveQuestions();
+                    setDoc(doc(db, "settings", "questions"), { list: defaultQuestions }).catch(() => {});
+                } else if (qData.list && Array.isArray(qData.list) && qData.list.length > 0) {
                     localStorage.setItem('proctor_exam_questions', JSON.stringify(qData.list));
                     loadActiveQuestions();
                 } else {
