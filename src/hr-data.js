@@ -1,4 +1,11 @@
 import { questions as defaultQuestions } from './questions.js';
+import { db, storage } from './firebase-config.js';
+import { doc, setDoc, updateDoc, getDoc, collection, getDocs, deleteDoc, arrayUnion, writeBatch, onSnapshot, addDoc } from 'firebase/firestore';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
+
+let studentsData = [];
+let examsData = [];
+let violationsData = [];
 
 /**
  * HR Data Layer — Shared localStorage module
@@ -74,12 +81,16 @@ export function upsertStudent(session) {
     if (idx >= 0) {
         all[idx] = { ...all[idx], ...session };
         updatedSession = all[idx];
+        writeJSON(KEYS.STUDENTS, all);
+        // Since it exists, we can use the update route to prevent massive payloads
+        syncStudentUpdateToRemote(session);
     } else {
         all.push(session);
         updatedSession = session;
+        writeJSON(KEYS.STUDENTS, all);
+        // Use register for new candidates
+        syncStudentToRemote(updatedSession);
     }
-    writeJSON(KEYS.STUDENTS, all);
-    syncStudentToRemote(updatedSession);
 }
 
 export function appendViolation(sessionId, violation) {
@@ -89,7 +100,7 @@ export function appendViolation(sessionId, violation) {
         student.violations = student.violations || [];
         student.violations.push(violation);
         writeJSON(KEYS.STUDENTS, all);
-        syncStudentToRemote(student);
+        syncViolationToRemote(sessionId, violation);
     }
 }
 
@@ -100,7 +111,7 @@ export function updateStudentStatus(sessionId, status, extra = {}) {
         student.status = status;
         Object.assign(student, extra);
         writeJSON(KEYS.STUDENTS, all);
-        syncStudentToRemote(student);
+        syncStudentUpdateToRemote(Object.assign({ sessionId, status }, extra));
     }
 }
 
@@ -119,21 +130,39 @@ export function isBlocked(sessionId) {
     return getBlockedIds().includes(sessionId);
 }
 
-export function blockStudent(sessionId) {
+export async function blockStudent(sessionId) {
     const blocked = getBlockedIds();
     if (!blocked.includes(sessionId)) {
         blocked.push(sessionId);
         writeJSON(KEYS.BLOCKED, blocked);
-        syncBlocklistToRemote(blocked);
     }
     updateStudentStatus(sessionId, 'blocked', { endTime: new Date().toISOString() });
+    
+    try {
+        await fetch(`${API_BASE}/api/hr/block`, {
+            method: 'POST',
+            headers: getHrHeaders(),
+            body: JSON.stringify({ sessionId })
+        });
+    } catch (e) {
+        console.error('Failed to block student remotely:', e);
+    }
 }
 
-export function unblockStudent(sessionId) {
+export async function unblockStudent(sessionId) {
     const blocked = getBlockedIds().filter(id => id !== sessionId);
     writeJSON(KEYS.BLOCKED, blocked);
-    syncBlocklistToRemote(blocked);
     updateStudentStatus(sessionId, 'active');
+
+    try {
+        await fetch(`${API_BASE}/api/hr/unblock`, {
+            method: 'POST',
+            headers: getHrHeaders(),
+            body: JSON.stringify({ sessionId })
+        });
+    } catch (e) {
+        console.error('Failed to unblock student remotely:', e);
+    }
 }
 
 // ─── Questions ────────────────────────────────────────────────────────────────
@@ -156,6 +185,7 @@ export function getMaxWarnings() {
 
 export function saveMaxWarnings(n) {
     localStorage.setItem(KEYS.MAX_WARN, String(n));
+    syncSettingsToServer();
 }
 
 /**
@@ -169,15 +199,19 @@ export function getExamDuration() {
 
 export async function saveExamDuration(minutes) {
     localStorage.setItem(KEYS.EXAM_DURATION, String(minutes));
-    // Sync to remote so candidate portals pick up the new duration
+    await syncSettingsToServer();
+}
+
+export async function syncSettingsToServer() {
     try {
-        await fetch(`${BUCKET_URL}/exam_duration`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(minutes)
-        });
+        const maxWarnings = getMaxWarnings();
+        const examDuration = getExamDuration();
+        await setDoc(doc(db, "settings", "config"), {
+            maxWarnings,
+            examDuration
+        }, { merge: true });
     } catch (e) {
-        console.error('Remote exam duration sync failed:', e);
+        console.error('Remote settings sync failed:', e);
     }
 }
 
@@ -189,41 +223,113 @@ export function generateSessionId() {
     ).join('').toUpperCase();
 }
 
-// ─── Remote Sync Functions (kvdb.io integration) ──────────────────────────────
+// ─── Remote Sync Functions (Firebase Firestore integration) ───────────────────
 
-const BUCKET_URL = 'https://kvdb.io/aifocused_proctor_db_x791a82';
+export async function uploadScreenshot(studentId, base64Data) {
+    if (!base64Data || !base64Data.startsWith('data:')) {
+        return base64Data;
+    }
+    try {
+        const storageRef = ref(storage, `screenshots/${studentId}/${Date.now()}.jpg`);
+        const uploadResult = await uploadString(storageRef, base64Data, 'data_url');
+        return await getDownloadURL(uploadResult.ref);
+    } catch (e) {
+        console.error("Firebase Storage screenshot upload failed, falling back to base64 inline data:", e);
+        return base64Data;
+    }
+}
+
+function getWarningCountForStudent(sessionId) {
+    const student = getStudent(sessionId);
+    return student && student.violations ? student.violations.length : 0;
+}
 
 export async function syncStudentToRemote(student) {
     try {
-        await fetch(`${BUCKET_URL}/student_${student.sessionId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(student)
+        const studentId = student.sessionId;
+        
+        // 1. Write to "students" collection
+        await setDoc(doc(db, "students", studentId), {
+            studentId,
+            fullName: student.name || '',
+            email: student.email || '',
+            phone: student.phone || '',
+            college: student.college || student.location || '',
+            registeredAt: student.registeredAt || new Date().toISOString()
+        });
+
+        // 2. Write to "exams" collection
+        await setDoc(doc(db, "exams", studentId), {
+            studentId,
+            examId: studentId,
+            answers: student.answers || {},
+            score: student.score || null,
+            startTime: student.startTime || new Date().toISOString(),
+            submitTime: student.endTime || null,
+            status: student.status || 'active'
         });
     } catch (e) {
-        console.error('Remote student sync failed:', e);
+        console.error('Remote student registration failed:', e);
+    }
+}
+
+export async function syncStudentUpdateToRemote(updates) {
+    try {
+        const studentId = updates.sessionId;
+        const examFields = {};
+        
+        if (updates.status) examFields.status = updates.status;
+        if (updates.score !== undefined) examFields.score = updates.score;
+        if (updates.endTime) examFields.submitTime = updates.endTime;
+        if (updates.answers) examFields.answers = updates.answers;
+
+        if (Object.keys(examFields).length > 0) {
+            await setDoc(doc(db, "exams", studentId), examFields, { merge: true });
+        }
+    } catch (e) {
+        console.error('Remote student update failed:', e);
+    }
+}
+
+export async function syncViolationToRemote(sessionId, violation) {
+    try {
+        const warningCount = getWarningCountForStudent(sessionId);
+        
+        // 1. Upload screenshot to Firebase Storage
+        const screenshotUrl = await uploadScreenshot(sessionId, violation.screenshot || '');
+        
+        // 2. Save violation record in Firestore
+        await addDoc(collection(db, "violations"), {
+            studentId: sessionId,
+            violationType: violation.type || '',
+            screenshot: screenshotUrl,
+            timestamp: new Date().toISOString(),
+            warningCount: warningCount
+        });
+        
+        // If phone detection violation, automatically block on Firestore
+        if (violation.type === 'cell_phone') {
+            const blocked = getBlockedIds();
+            if (!blocked.includes(sessionId)) {
+                blocked.push(sessionId);
+                writeJSON(KEYS.BLOCKED, blocked);
+            }
+            await setDoc(doc(db, "settings", "config"), {
+                blocked_ids: blocked
+            }, { merge: true });
+        }
+    } catch (e) {
+        console.error('Remote violation sync failed:', e);
     }
 }
 
 export async function syncBlocklistToRemote(blocked) {
-    try {
-        await fetch(`${BUCKET_URL}/blocked_ids`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(blocked)
-        });
-    } catch (e) {
-        console.error('Remote blocklist sync failed:', e);
-    }
+    // Handled directly inside blockStudent / unblockStudent
 }
 
 export async function syncQuestionsToRemote(questions) {
     try {
-        await fetch(`${BUCKET_URL}/questions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(questions)
-        });
+        await setDoc(doc(db, "settings", "questions"), { list: questions });
     } catch (e) {
         console.error('Remote questions sync failed:', e);
     }
@@ -231,30 +337,73 @@ export async function syncQuestionsToRemote(questions) {
 
 export async function syncAllFromRemote() {
     try {
-        // 1. Fetch all student keys and values in one request
-        const res = await fetch(`${BUCKET_URL}/?prefix=student_&values=true&format=json`);
-        if (res.ok) {
-            const data = await res.json(); // Array of [key, value]
-            const students = data.map(item => {
-                const val = item[1];
-                return typeof val === 'string' ? JSON.parse(val) : val;
-            });
-            writeJSON(KEYS.STUDENTS, students);
+        // 1. Fetch Students
+        const studentsSnapshot = await getDocs(collection(db, "students"));
+        studentsData = [];
+        studentsSnapshot.forEach(doc => studentsData.push(doc.data()));
+
+        // 2. Fetch Exams
+        const examsSnapshot = await getDocs(collection(db, "exams"));
+        examsData = [];
+        examsSnapshot.forEach(doc => examsData.push(doc.data()));
+
+        // 3. Fetch Violations
+        const violationsSnapshot = await getDocs(collection(db, "violations"));
+        violationsData = [];
+        violationsSnapshot.forEach(doc => violationsData.push(doc.data()));
+
+        // 4. Merge and write to local storage
+        const merged = studentsData.map(student => {
+            const exam = examsData.find(e => e.studentId === student.studentId) || null;
+            const studentViolations = violationsData
+                .filter(v => v.studentId === student.studentId)
+                .map(v => ({
+                    type: v.violationType,
+                    message: `Violation detected: ${v.violationType}`,
+                    time: v.timestamp ? new Date(v.timestamp).toLocaleTimeString() : '',
+                    severity: v.violationType === 'cell_phone' ? 'critical' : 'warning',
+                    screenshot: v.screenshot || ''
+                }));
+
+            return {
+                sessionId: student.studentId,
+                name: student.fullName,
+                email: student.email,
+                phone: student.phone,
+                location: student.college || '',
+                date: student.registeredAt ? new Date(student.registeredAt).toLocaleDateString() : '',
+                status: exam ? exam.status : 'pending',
+                score: exam ? exam.score : null,
+                startTime: exam ? exam.startTime : null,
+                endTime: exam ? exam.submitTime : null,
+                totalQuestions: exam && exam.answers ? Object.keys(exam.answers).length : 0,
+                answered: exam && exam.answers ? Object.keys(exam.answers).filter(k => exam.answers[k] !== null).length : 0,
+                violations: studentViolations
+            };
+        });
+        writeJSON(KEYS.STUDENTS, merged);
+
+        // 5. Fetch config (blocked_ids and settings)
+        const configDoc = await getDoc(doc(db, "settings", "config"));
+        if (configDoc.exists()) {
+            const configData = configDoc.data();
+            if (configData.blocked_ids) {
+                writeJSON(KEYS.BLOCKED, configData.blocked_ids);
+            }
+            if (typeof configData.maxWarnings === 'number') {
+                localStorage.setItem(KEYS.MAX_WARN, String(configData.maxWarnings));
+            }
+            if (typeof configData.examDuration === 'number') {
+                localStorage.setItem(KEYS.EXAM_DURATION, String(configData.examDuration));
+            }
         }
 
-        // 2. Fetch blocklist
-        const blockRes = await fetch(`${BUCKET_URL}/blocked_ids`);
-        if (blockRes.ok) {
-            const blocked = await blockRes.json();
-            writeJSON(KEYS.BLOCKED, blocked);
-        }
-
-        // 3. Fetch questions
-        const questionsRes = await fetch(`${BUCKET_URL}/questions`);
-        if (questionsRes.ok) {
-            const remoteQ = await questionsRes.json();
-            if (remoteQ && Array.isArray(remoteQ) && remoteQ.length === defaultQuestions.length) {
-                writeJSON(KEYS.QUESTIONS, remoteQ);
+        // 6. Fetch questions
+        const questionsDoc = await getDoc(doc(db, "settings", "questions"));
+        if (questionsDoc.exists()) {
+            const qData = questionsDoc.data();
+            if (qData.list && Array.isArray(qData.list) && qData.list.length > 0) {
+                writeJSON(KEYS.QUESTIONS, qData.list);
             } else {
                 writeJSON(KEYS.QUESTIONS, defaultQuestions);
                 await syncQuestionsToRemote(defaultQuestions);
@@ -264,21 +413,159 @@ export async function syncAllFromRemote() {
             await syncQuestionsToRemote(defaultQuestions);
         }
     } catch (e) {
-        console.error('Failed to sync from remote database:', e);
+        console.error('Failed to sync from Firestore remote database:', e);
     }
 }
 
 export async function clearRemoteStudents() {
     try {
-        const res = await fetch(`${BUCKET_URL}/?prefix=student_&format=json`);
-        if (res.ok) {
-            const keys = await res.json();
-            for (const key of keys) {
-                await fetch(`${BUCKET_URL}/${key}`, { method: 'DELETE' }).catch(() => {});
-            }
-        }
-        await fetch(`${BUCKET_URL}/blocked_ids`, { method: 'DELETE' }).catch(() => {});
+        const batch = writeBatch(db);
+        
+        // Delete all students
+        const studentsSnapshot = await getDocs(collection(db, "students"));
+        studentsSnapshot.forEach((doc) => {
+            batch.delete(doc.ref);
+        });
+
+        // Delete all exams
+        const examsSnapshot = await getDocs(collection(db, "exams"));
+        examsSnapshot.forEach((doc) => {
+            batch.delete(doc.ref);
+        });
+
+        // Delete all violations
+        const violationsSnapshot = await getDocs(collection(db, "violations"));
+        violationsSnapshot.forEach((doc) => {
+            batch.delete(doc.ref);
+        });
+
+        // Reset blocked_ids
+        batch.set(doc(db, "settings", "config"), { blocked_ids: [] }, { merge: true });
+
+        await batch.commit();
+
+        studentsData = [];
+        examsData = [];
+        violationsData = [];
     } catch (e) {
-        console.error('Failed to clear remote data:', e);
+        console.error('Failed to clear remote data in Firestore:', e);
     }
 }
+
+// ─── Real-Time Firestore Document Observers ───────────────────────────────────
+
+export function subscribeToStudents(callback) {
+    let unsubStudents = () => {};
+    let unsubExams = () => {};
+    let unsubViolations = () => {};
+
+    const triggerMerge = () => {
+        const merged = studentsData.map(student => {
+            const exam = examsData.find(e => e.studentId === student.studentId) || null;
+            const studentViolations = violationsData
+                .filter(v => v.studentId === student.studentId)
+                .map(v => ({
+                    type: v.violationType,
+                    message: `Violation detected: ${v.violationType}`,
+                    time: v.timestamp ? new Date(v.timestamp).toLocaleTimeString() : '',
+                    severity: v.violationType === 'cell_phone' ? 'critical' : 'warning',
+                    screenshot: v.screenshot || ''
+                }));
+
+            return {
+                sessionId: student.studentId,
+                name: student.fullName,
+                email: student.email,
+                phone: student.phone,
+                location: student.college || '',
+                date: student.registeredAt ? new Date(student.registeredAt).toLocaleDateString() : '',
+                status: exam ? exam.status : 'pending',
+                score: exam ? exam.score : null,
+                startTime: exam ? exam.startTime : null,
+                endTime: exam ? exam.submitTime : null,
+                totalQuestions: exam && exam.answers ? Object.keys(exam.answers).length : 0,
+                answered: exam && exam.answers ? Object.keys(exam.answers).filter(k => exam.answers[k] !== null).length : 0,
+                violations: studentViolations
+            };
+        });
+        
+        writeJSON(KEYS.STUDENTS, merged);
+        callback(merged);
+    };
+
+    unsubStudents = onSnapshot(collection(db, "students"), (snapshot) => {
+        studentsData = [];
+        snapshot.forEach(doc => studentsData.push(doc.data()));
+        triggerMerge();
+    }, err => console.error("Students subscribe error:", err));
+
+    unsubExams = onSnapshot(collection(db, "exams"), (snapshot) => {
+        examsData = [];
+        snapshot.forEach(doc => examsData.push(doc.data()));
+        triggerMerge();
+    }, err => console.error("Exams subscribe error:", err));
+
+    unsubViolations = onSnapshot(collection(db, "violations"), (snapshot) => {
+        violationsData = [];
+        snapshot.forEach(doc => violationsData.push(doc.data()));
+        triggerMerge();
+    }, err => console.error("Violations subscribe error:", err));
+
+    return () => {
+        unsubStudents();
+        unsubExams();
+        unsubViolations();
+    };
+}
+
+export function subscribeToConfig(callback) {
+    return onSnapshot(doc(db, "settings", "config"), (snapshot) => {
+        if (snapshot.exists()) {
+            const configData = snapshot.data();
+            if (configData.blocked_ids) {
+                writeJSON(KEYS.BLOCKED, configData.blocked_ids);
+            }
+            if (typeof configData.maxWarnings === 'number') {
+                localStorage.setItem(KEYS.MAX_WARN, String(configData.maxWarnings));
+            }
+            if (typeof configData.examDuration === 'number') {
+                localStorage.setItem(KEYS.EXAM_DURATION, String(configData.examDuration));
+            }
+            callback(configData);
+        }
+    }, (error) => {
+        console.error("Error listening to config:", error);
+    });
+}
+
+// ─── Window Exposed Password Verify Helpers for HR Login Gate ──────────────────
+
+window.verifyHrPassword = async function(password) {
+    try {
+        const configDoc = await getDoc(doc(db, "settings", "config"));
+        let correctPassword = "123456789"; // Default
+        if (configDoc.exists()) {
+            const data = configDoc.data();
+            if (data.hr_password) {
+                correctPassword = data.hr_password;
+            }
+        }
+        return password === correctPassword;
+    } catch (e) {
+        console.error("Password verification error:", e);
+        return false;
+    }
+};
+
+window.updateHrPassword = async function(newPassword) {
+    try {
+        await setDoc(doc(db, "settings", "config"), {
+            hr_password: newPassword
+        }, { merge: true });
+        return true;
+    } catch (e) {
+        console.error("Password update error:", e);
+        return false;
+    }
+};
+

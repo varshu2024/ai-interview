@@ -7,7 +7,8 @@ import {
     getAllStudents, blockStudent, unblockStudent, getBlockedIds,
     getQuestions, saveQuestions, getMaxWarnings, saveMaxWarnings,
     getExamDuration, saveExamDuration,
-    clearAllStudents, upsertStudent, syncAllFromRemote
+    clearAllStudents, upsertStudent, syncAllFromRemote,
+    subscribeToStudents, subscribeToConfig
 } from './hr-data.js';
 import { questions as defaultQuestions } from './questions.js';
 
@@ -56,15 +57,19 @@ document.addEventListener('DOMContentLoaded', () => {
         renderDashboard();
         renderStudentsTable();
         renderQuestionsPanel();
-    });
 
-    // Auto-refresh every 3 seconds
-    refreshTimer = setInterval(() => {
-        syncAllFromRemote().then(() => {
+        // Subscribe to real-time students collection changes
+        subscribeToStudents(() => {
             renderDashboard();
             renderStudentsTable();
         });
-    }, 3000);
+
+        // Subscribe to real-time configuration changes
+        subscribeToConfig(() => {
+            renderDashboard();
+            renderStudentsTable();
+        });
+    });
 });
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
@@ -217,7 +222,7 @@ function renderStudentsTable() {
                 <td style="font-size:0.82rem;color:var(--hr-text-secondary)">${escHtml(s.email || '—')}</td>
                 <td>
                     <div style="font-weight:500;color:var(--hr-text)">${escHtml(s.phone || '—')}</div>
-                    <div style="font-size:0.72rem;color:var(--hr-text-muted)">📍 ${escHtml(s.location || '—')}</div>
+                    <div style="font-size:0.72rem;color:var(--hr-text-muted)">🏫 ${escHtml(s.location || '—')}</div>
                     <div style="font-size:0.68rem;color:var(--hr-text-muted);margin-top:2px;">📅 ${escHtml(s.date || '—')}</div>
                 </td>
                 <td>${statusBadge}</td>

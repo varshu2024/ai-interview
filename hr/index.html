@@ -317,7 +317,7 @@
                             <tr>
                                 <th>Student Details</th>
                                 <th>Email</th>
-                                <th>Date, Phone &amp; Location</th>
+                                <th>Date, Phone &amp; College</th>
                                 <th>Status</th>
                                 <th>Score</th>
                                 <th>Violations</th>
@@ -520,16 +520,16 @@
 <!-- Login Gate Script -->
 <script>
 (function() {
-    const DEFAULT_CODE = '123456789';
-    const STORAGE_KEY  = 'hr_secret_code';
     const SESSION_KEY  = 'hr_portal_unlocked';
+    const PW_KEY       = 'hr_portal_password';
+    
+    const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? 'http://localhost:3000'
+        : window.location.origin;
 
-    function getCode() {
-        return localStorage.getItem(STORAGE_KEY) || DEFAULT_CODE;
-    }
-
-    function unlock() {
+    function unlock(password) {
         sessionStorage.setItem(SESSION_KEY, 'true');
+        sessionStorage.setItem(PW_KEY, password);
         const gate = document.getElementById('hr-login-gate');
         gate.style.transition = 'opacity 0.35s ease';
         gate.style.opacity = '0';
@@ -551,14 +551,28 @@
         }, 2000);
     }
 
-    function tryUnlock() {
+    async function tryUnlock() {
         const input = document.getElementById('hr-password-input');
         const entered = input ? input.value : '';
         if (!entered) { showError('Please enter the password.'); return; }
-        if (entered === getCode()) {
-            unlock();
-        } else {
-            showError('Incorrect password. Please try again.');
+        
+        if (typeof window.verifyHrPassword !== 'function') {
+            showError('Database connection initializing. Please try again in a moment.');
+            return;
+        }
+
+        try {
+            const isCorrect = await window.verifyHrPassword(entered);
+            if (isCorrect) {
+                unlock(entered);
+                // Trigger page refresh/sync in hr-portal.js
+                location.reload();
+            } else {
+                showError('Incorrect password. Please try again.');
+            }
+        } catch (e) {
+            console.error('Login error:', e);
+            showError('Database error. Please check your network connection.');
         }
     }
 
@@ -585,6 +599,7 @@
         if (logoutBtn) {
             logoutBtn.addEventListener('click', () => {
                 sessionStorage.removeItem(SESSION_KEY);
+                sessionStorage.removeItem(PW_KEY);
                 const gate = document.getElementById('hr-login-gate');
                 gate.style.opacity = '0';
                 gate.style.display = 'flex';
@@ -602,7 +617,7 @@
         // Change password from Settings panel
         const saveCodeBtn = document.getElementById('btn-save-secret-code');
         if (saveCodeBtn) {
-            saveCodeBtn.addEventListener('click', () => {
+            saveCodeBtn.addEventListener('click', async () => {
                 const newCode = document.getElementById('new-secret-code').value.trim();
                 const confirm = document.getElementById('confirm-secret-code').value.trim();
                 if (!newCode || newCode.length < 4) {
@@ -611,15 +626,29 @@
                 if (newCode !== confirm) {
                     alert('Passwords do not match. Please re-enter.'); return;
                 }
-                localStorage.setItem(STORAGE_KEY, newCode);
-                document.getElementById('new-secret-code').value = '';
-                document.getElementById('confirm-secret-code').value = '';
-                alert('Password updated! Use the new password on next login.');
+                
+                if (typeof window.updateHrPassword !== 'function') {
+                    alert('Database connection initializing. Please try again.');
+                    return;
+                }
+
+                try {
+                    const success = await window.updateHrPassword(newCode);
+                    if (success) {
+                        sessionStorage.setItem(PW_KEY, newCode);
+                        document.getElementById('new-secret-code').value = '';
+                        document.getElementById('confirm-secret-code').value = '';
+                        alert('Password updated! Use the new password on next login.');
+                    } else {
+                        alert('Failed to update password. Server error.');
+                    }
+                } catch (e) {
+                    console.error('Password change error:', e);
+                    alert('Failed to update password. Please check your network connection.');
+                }
             });
         }
     });
-
-    window.hrGetCode = getCode;
 })();
 </script>
 

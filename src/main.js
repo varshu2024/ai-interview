@@ -1,5 +1,7 @@
 import { questions as defaultQuestions } from './questions.js';
 import { ProctorEngine } from './proctor.js';
+import { db } from './firebase-config.js';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import {
     getAllStudents, upsertStudent, appendViolation, updateStudentStatus,
     isBlocked, blockStudent, getBlockedIds, getQuestions,
@@ -12,7 +14,36 @@ let studentName = 'Candidate';
 let studentEmail = '';
 let studentDate = '';
 let studentPhone = '';
-let studentLocation = '';
+let studentCollege = '';
+
+// ─── LocalStorage Session Management ──────────────────────────────────────────
+function saveCandidateSession() {
+    localStorage.setItem('candidate_session_id', sessionId);
+    localStorage.setItem('candidate_name', studentName);
+    localStorage.setItem('candidate_email', studentEmail);
+    localStorage.setItem('candidate_date', studentDate);
+    localStorage.setItem('candidate_phone', studentPhone);
+    localStorage.setItem('candidate_college', studentCollege);
+    localStorage.setItem('candidate_answers', JSON.stringify(answers));
+    localStorage.setItem('candidate_warnings', String(warnings));
+    localStorage.setItem('candidate_violations', JSON.stringify(violationLogs));
+    localStorage.setItem('candidate_time_left', String(timeLeft));
+}
+
+function clearCandidateSession() {
+    localStorage.removeItem('candidate_session_id');
+    localStorage.removeItem('candidate_name');
+    localStorage.removeItem('candidate_email');
+    localStorage.removeItem('candidate_date');
+    localStorage.removeItem('candidate_phone');
+    localStorage.removeItem('candidate_college');
+    localStorage.removeItem('candidate_status');
+    localStorage.removeItem('candidate_answers');
+    localStorage.removeItem('candidate_warnings');
+    localStorage.removeItem('candidate_violations');
+    localStorage.removeItem('candidate_time_left');
+    localStorage.removeItem('candidate_start_time');
+}
 
 // ─── Application State ────────────────────────────────────────────────────────
 let activeQuestions = [];
@@ -341,6 +372,7 @@ function handleProctorViolation(type, message, severity) {
         showToast('📸 Screenshot Blocked', message, null, 'info');
         // Write to HR data (informational, no strike)
         appendViolation(sessionId, viol);
+        saveCandidateSession();
         return;
     }
 
@@ -357,6 +389,7 @@ function handleProctorViolation(type, message, severity) {
         name: studentName,
         violations: violationLogs,
     });
+    saveCandidateSession();
 
     updateViolationGauge();
 
@@ -470,7 +503,7 @@ async function launchExam() {
         email: studentEmail,
         date: studentDate,
         phone: studentPhone,
-        location: studentLocation,
+        college: studentCollege,
         startTime: new Date().toISOString(),
         status: 'active',
         score: null,
@@ -480,6 +513,8 @@ async function launchExam() {
         violations: [],
         endTime: null,
     });
+    localStorage.setItem('candidate_status', 'active');
+    saveCandidateSession();
 
     proctor.stopWebcamStream();
 
@@ -627,6 +662,9 @@ function startTimer() {
 
     timerInterval = setInterval(() => {
         timeLeft--;
+        if (timeLeft % 5 === 0) {
+            localStorage.setItem('candidate_time_left', String(timeLeft));
+        }
         if (timeLeft <= 0) {
             clearInterval(timerInterval);
             finishExam(true);
@@ -680,6 +718,7 @@ function loadQuestion(index) {
                 document.querySelectorAll('.option-btn').forEach(btn => btn.classList.remove('selected'));
                 optBtn.classList.add('selected');
                 answers[index] = optIdx;
+                localStorage.setItem('candidate_answers', JSON.stringify(answers));
                 updateQuestionStatus(index, 'answered');
                 // ── Push live progress + score to HR dashboard in real-time ──────
                 const answeredCount = Object.keys(answers).length;
@@ -710,6 +749,7 @@ function loadQuestion(index) {
 
         textInput.addEventListener('input', (e) => {
             answers[index] = e.target.value;
+            localStorage.setItem('candidate_answers', JSON.stringify(answers));
             if (e.target.value.trim().length > 0) {
                 updateQuestionStatus(index, 'answered');
             } else {
@@ -794,6 +834,8 @@ function calculateScore() {
         endTime: new Date().toISOString(),
         violations: violationLogs,
     });
+    clearCandidateSession();
+    localStorage.setItem('candidate_status', 'completed');
 
     views.exam.classList.remove('active');
     views.success.classList.add('active');
@@ -831,6 +873,8 @@ function triggerLockout(reason, triggerType) {
         endTime: new Date().toISOString(),
         violations: violationLogs,
     });
+    clearCandidateSession();
+    localStorage.setItem('candidate_status', 'blocked');
 
     // Generate session ID display
     const sessionHashEl = document.getElementById('session-hash');
@@ -917,49 +961,135 @@ window.addEventListener('DOMContentLoaded', () => {
 
     loadActiveQuestions();
 
-    // Fetch latest questions, blocklist, and exam duration from remote cloud database on startup
-    fetch('https://kvdb.io/aifocused_proctor_db_x791a82/exam_duration')
-        .then(res => res.ok ? res.json() : null)
-        .then(dur => {
-            if (dur !== null && typeof dur === 'number' && dur > 0) {
-                localStorage.setItem('hr_exam_duration', String(dur));
+    // Fetch latest questions, blocklist, and exam duration from Firestore on startup
+    getDoc(doc(db, "settings", "config"))
+        .then(configDoc => {
+            if (configDoc.exists()) {
+                const configData = configDoc.data();
+                if (typeof configData.examDuration === 'number') {
+                    localStorage.setItem('hr_exam_duration', String(configData.examDuration));
+                }
+                if (typeof configData.maxWarnings === 'number') {
+                    localStorage.setItem('hr_max_warnings', String(configData.maxWarnings));
+                    maxWarnings = configData.maxWarnings;
+                }
+                if (configData.blocked_ids && Array.isArray(configData.blocked_ids)) {
+                    localStorage.setItem('hr_blocked_ids', JSON.stringify(configData.blocked_ids));
+                }
             }
         }).catch(() => {}); // silently ignore; local fallback used
-    fetch('https://kvdb.io/aifocused_proctor_db_x791a82/questions')
-        .then(res => res.ok ? res.json() : null)
-        .then(questions => {
-            if (questions && Array.isArray(questions) && questions.length === defaultQuestions.length) {
-                localStorage.setItem('proctor_exam_questions', JSON.stringify(questions));
-                loadActiveQuestions();
+
+    getDoc(doc(db, "settings", "questions"))
+        .then(questionsDoc => {
+            if (questionsDoc.exists()) {
+                const qData = questionsDoc.data();
+                if (qData.list && Array.isArray(qData.list) && qData.list.length > 0) {
+                    localStorage.setItem('proctor_exam_questions', JSON.stringify(qData.list));
+                    loadActiveQuestions();
+                } else {
+                    // Populate defaults
+                    localStorage.setItem('proctor_exam_questions', JSON.stringify(defaultQuestions));
+                    loadActiveQuestions();
+                    setDoc(doc(db, "settings", "questions"), { list: defaultQuestions }).catch(() => {});
+                }
             } else {
-                // If remote database is empty, has old questions, or has a mismatched question count, overwrite with the new defaults
                 localStorage.setItem('proctor_exam_questions', JSON.stringify(defaultQuestions));
                 loadActiveQuestions();
-                fetch('https://kvdb.io/aifocused_proctor_db_x791a82/questions', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(defaultQuestions)
-                }).catch(err => console.error("Initial remote questions sync failed:", err));
+                setDoc(doc(db, "settings", "questions"), { list: defaultQuestions }).catch(() => {});
             }
         }).catch(err => {
-            console.log("Remote questions sync skipped, using local cache:", err);
+            console.log("Firestore questions sync skipped, using local cache:", err);
             loadActiveQuestions();
         });
 
-    fetch('https://kvdb.io/aifocused_proctor_db_x791a82/blocked_ids')
-        .then(res => res.ok ? res.json() : null)
-        .then(blocked => {
-            if (blocked && Array.isArray(blocked)) {
-                localStorage.setItem('hr_blocked_ids', JSON.stringify(blocked));
-            }
-        }).catch(err => console.log("Remote blocklist sync skipped, using local cache:", err));
+    // Check if there is an active session in local storage
+    const savedSessionId = localStorage.getItem('candidate_session_id');
+    const savedStatus = localStorage.getItem('candidate_status');
 
-    // Set initial active view to registration
-    Object.values(views).forEach(view => {
-        if (view) view.classList.remove('active');
-    });
-    if (views.registration) {
-        views.registration.classList.add('active');
+    let sessionRestored = false;
+
+    if (savedSessionId && savedStatus && savedStatus !== 'completed' && savedStatus !== 'blocked') {
+        // Restore session info
+        sessionId = savedSessionId;
+        studentName = localStorage.getItem('candidate_name') || 'Candidate';
+        studentEmail = localStorage.getItem('candidate_email') || '';
+        studentDate = localStorage.getItem('candidate_date') || '';
+        studentPhone = localStorage.getItem('candidate_phone') || '';
+        studentCollege = localStorage.getItem('candidate_college') || '';
+        
+        // Restore answers
+        const savedAnswers = localStorage.getItem('candidate_answers');
+        if (savedAnswers) {
+            try {
+                Object.assign(answers, JSON.parse(savedAnswers));
+            } catch (e) {
+                console.error('Failed to parse saved answers:', e);
+            }
+        }
+        
+        // Restore warnings and violations
+        const savedWarnings = localStorage.getItem('candidate_warnings');
+        if (savedWarnings) {
+            warnings = parseInt(savedWarnings, 10);
+        }
+        
+        const savedViolations = localStorage.getItem('candidate_violations');
+        if (savedViolations) {
+            try {
+                violationLogs.push(...JSON.parse(savedViolations));
+            } catch (e) {
+                console.error('Failed to parse saved violations:', e);
+            }
+        }
+        
+        // Restore time left
+        const savedTimeLeft = localStorage.getItem('candidate_time_left');
+        if (savedTimeLeft) {
+            timeLeft = parseInt(savedTimeLeft, 10);
+        }
+        
+        // Force status back to pending so that candidate is forced to grant hardware permissions again
+        localStorage.setItem('candidate_status', 'pending');
+        
+        // Populate registration inputs in case they are shown
+        const dateInput = document.getElementById('reg-date');
+        if (dateInput) dateInput.value = studentDate;
+        const nameInput = document.getElementById('reg-name');
+        if (nameInput) nameInput.value = studentName;
+        const emailInput = document.getElementById('reg-email');
+        if (emailInput) emailInput.value = studentEmail;
+        const phoneInput = document.getElementById('reg-phone');
+        if (phoneInput) phoneInput.value = studentPhone;
+        const collegeInput = document.getElementById('reg-college');
+        if (collegeInput) collegeInput.value = studentCollege;
+
+        // Display setup screen directly
+        Object.values(views).forEach(v => v && v.classList.remove('active'));
+        if (views.registration) {
+            views.registration.style.display = 'none';
+        }
+        if (views.setup) {
+            views.setup.classList.add('active');
+        }
+        
+        // Initialize TensorFlow model download automatically
+        updateChecklistItem(checklist.model, 'pending', 'Downloading TensorFlow model...');
+        proctor.loadModel();
+        sessionRestored = true;
+    } else if (savedSessionId && savedStatus === 'blocked') {
+        sessionId = savedSessionId;
+        showHrBlockedScreen();
+        return;
+    }
+
+    if (!sessionRestored) {
+        // Set initial active view to registration
+        Object.values(views).forEach(view => {
+            if (view) view.classList.remove('active');
+        });
+        if (views.registration) {
+            views.registration.classList.add('active');
+        }
     }
 
     // Google Form validation and submission
@@ -979,7 +1109,7 @@ window.addEventListener('DOMContentLoaded', () => {
             const nameVal = document.getElementById('reg-name').value.trim();
             const emailVal = document.getElementById('reg-email').value.trim();
             const phoneVal = document.getElementById('reg-phone').value.trim();
-            const locationVal = document.getElementById('reg-location').value.trim();
+            const collegeVal = document.getElementById('reg-college').value.trim();
 
             // Date validate
             if (!dateVal) {
@@ -1022,14 +1152,14 @@ window.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('gerr-phone').classList.remove('visible');
             }
 
-            // Location validate
-            if (!locationVal) {
-                document.getElementById('gcard-location').classList.add('error');
-                document.getElementById('gerr-location').classList.add('visible');
+            // College validate
+            if (!collegeVal) {
+                document.getElementById('gcard-college').classList.add('error');
+                document.getElementById('gerr-college').classList.add('visible');
                 isValid = false;
             } else {
-                document.getElementById('gcard-location').classList.remove('error');
-                document.getElementById('gerr-location').classList.remove('visible');
+                document.getElementById('gcard-college').classList.remove('error');
+                document.getElementById('gerr-college').classList.remove('visible');
             }
 
             if (isValid) {
@@ -1037,7 +1167,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 studentEmail = emailVal;
                 studentDate = dateVal;
                 studentPhone = phoneVal;
-                studentLocation = locationVal;
+                studentCollege = collegeVal;
 
                 // Register student session in HR data as pending
                 upsertStudent({
@@ -1046,7 +1176,7 @@ window.addEventListener('DOMContentLoaded', () => {
                     email: studentEmail,
                     date: studentDate,
                     phone: studentPhone,
-                    location: studentLocation,
+                    college: studentCollege,
                     startTime: new Date().toISOString(),
                     status: 'pending',
                     score: null,
@@ -1055,6 +1185,9 @@ window.addEventListener('DOMContentLoaded', () => {
                     correct: 0,
                     violations: [],
                 });
+                
+                localStorage.setItem('candidate_status', 'pending');
+                saveCandidateSession();
 
                 // Move to permissions setup screen
                 views.registration.classList.remove('active');
@@ -1077,7 +1210,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('reg-name').value = '';
                 document.getElementById('reg-email').value = '';
                 document.getElementById('reg-phone').value = '';
-                document.getElementById('reg-location').value = '';
+                document.getElementById('reg-college').value = '';
                 document.querySelectorAll('.gform-card').forEach(c => c.classList.remove('error'));
                 document.querySelectorAll('.gform-error-msg').forEach(m => m.classList.remove('visible'));
             }
