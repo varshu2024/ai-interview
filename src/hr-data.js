@@ -378,7 +378,8 @@ export async function syncAllFromRemote() {
                 endTime: exam ? exam.submitTime : null,
                 totalQuestions: exam && exam.answers ? Object.keys(exam.answers).length : 0,
                 answered: exam && exam.answers ? Object.keys(exam.answers).filter(k => exam.answers[k] !== null).length : 0,
-                violations: studentViolations
+                violations: studentViolations,
+                answers: exam ? exam.answers : {}
             };
         });
         writeJSON(KEYS.STUDENTS, merged);
@@ -488,7 +489,8 @@ export function subscribeToStudents(callback) {
                 endTime: exam ? exam.submitTime : null,
                 totalQuestions: exam && exam.answers ? Object.keys(exam.answers).length : 0,
                 answered: exam && exam.answers ? Object.keys(exam.answers).filter(k => exam.answers[k] !== null).length : 0,
-                violations: studentViolations
+                violations: studentViolations,
+                answers: exam ? exam.answers : {}
             };
         });
         

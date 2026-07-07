@@ -304,6 +304,7 @@ function buildViolationDrawer(student) {
             <h4>📋 Cheating / Violation Details</h4>
             ${gazeStatsHtml}
             <div class="no-violations">✅ No violations recorded for this session.</div>
+            ${buildAnswersSection(student)}
         `;
     }
 
@@ -331,6 +332,103 @@ function buildViolationDrawer(student) {
         <h4>📋 Cheating / Violation Details — ${escHtml(student.name || 'Unknown')}</h4>
         ${gazeStatsHtml}
         <ul class="violation-list-hr" style="margin-top:0.75rem; padding-left: 0;">${violationListHtml}</ul>
+        ${buildAnswersSection(student)}
+    `;
+}
+
+function buildAnswersSection(student) {
+    const storedQ = getQuestions();
+    const questions = (storedQ && storedQ.length > 0) ? storedQ : defaultQuestions;
+    const answers = student.answers || {};
+
+    const answeredIndexes = Object.keys(answers).map(Number);
+    if (answeredIndexes.length === 0) {
+        return `
+            <div style="margin-top: 1.5rem; border-top: 1px solid var(--hr-border); padding-top: 1.25rem;">
+                <h4 style="margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.4rem;">
+                    <span>📝 Candidate Exam Responses</span>
+                </h4>
+                <div class="no-violations" style="background: #ffffff; border: 1px solid var(--hr-border); border-radius: var(--hr-radius-sm); color: var(--hr-text-muted);">⏳ No answers submitted yet by this candidate.</div>
+            </div>
+        `;
+    }
+
+    // Sort the question indexes so they are in sequential order
+    answeredIndexes.sort((a, b) => a - b);
+
+    const answersListHtml = answeredIndexes.map(idx => {
+        const q = questions.find(item => item.id === (idx + 1)) || questions[idx];
+        if (!q) return '';
+        const candidateAns = answers[idx];
+
+        let contentHtml = '';
+        let badgeHtml = '';
+
+        if (q.type === 'single') {
+            // MCQ
+            const optLetter = String.fromCharCode(65 + candidateAns);
+            const isCorrect = candidateAns === q.answer;
+            const correctOptLetter = String.fromCharCode(65 + q.answer);
+            
+            badgeHtml = isCorrect
+                ? `<span style="display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.7rem; font-weight: 700; color: #16a34a; background: #f0fdf4; padding: 0.2rem 0.5rem; border-radius: 4px; border: 1px solid #bbf7d0;">✓ Correct</span>`
+                : `<span style="display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.7rem; font-weight: 700; color: #dc2626; background: #fef2f2; padding: 0.2rem 0.5rem; border-radius: 4px; border: 1px solid #fecaca;">✗ Incorrect</span>`;
+
+            contentHtml = `
+                <div style="font-size: 0.8rem; margin-top: 0.4rem; color: var(--hr-text-secondary);">
+                    <div>Chosen Answer: <strong style="color: ${isCorrect ? '#16a34a' : '#dc2626'}">${optLetter}. ${escHtml(q.options[candidateAns] || '')}</strong></div>
+                    ${!isCorrect ? `<div style="margin-top: 0.15rem; color: #16a34a; font-weight: 500;">Correct Answer: ${correctOptLetter}. ${escHtml(q.options[q.answer] || '')}</div>` : ''}
+                </div>
+            `;
+        } else if (q.type === 'text') {
+            // Descriptive question
+            const textVal = String(candidateAns || '');
+            const wordCount = textVal.trim().split(/\s+/).filter(w => w.length > 0).length;
+            badgeHtml = `<span style="font-size: 0.7rem; font-weight: 600; color: #2563eb; background: #eff6ff; padding: 0.2rem 0.5rem; border-radius: 4px; border: 1px solid #bfdbfe;">✍️ Written Response (${wordCount} words)</span>`;
+            contentHtml = `
+                <div style="
+                    margin-top: 0.5rem;
+                    padding: 0.85rem 1rem;
+                    background: #f8fafc;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 6px;
+                    font-size: 0.82rem;
+                    color: #334155;
+                    white-space: pre-wrap;
+                    line-height: 1.5;
+                    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                ">${escHtml(textVal)}</div>
+            `;
+        }
+
+        return `
+            <div style="
+                background: #ffffff;
+                border: 1px solid var(--hr-border);
+                border-radius: 8px;
+                padding: 1rem;
+                margin-bottom: 0.75rem;
+                box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+            ">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
+                    <div style="font-size: 0.82rem; font-weight: 600; color: var(--hr-text); flex: 1;">Q${idx + 1}. ${escHtml(q.text)}</div>
+                    <div>${badgeHtml}</div>
+                </div>
+                ${contentHtml}
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <div style="margin-top: 1.5rem; border-top: 1px solid var(--hr-border); padding-top: 1.25rem;">
+            <h4 style="margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.4rem;">
+                <span>📝 Candidate Exam Responses</span>
+                <span style="font-size: 0.75rem; font-weight: 500; color: var(--hr-text-muted);">(${answeredIndexes.length} answered)</span>
+            </h4>
+            <div style="max-height: 500px; overflow-y: auto; padding-right: 0.5rem;">
+                ${answersListHtml}
+            </div>
+        </div>
     `;
 }
 

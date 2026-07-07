@@ -49,6 +49,7 @@ function clearCandidateSession() {
 let activeQuestions = [];
 let currentQuestionIndex = 0;
 const answers = {};
+let textSyncTimeout = null;
 let warnings = 0;
 let maxWarnings = getMaxWarnings(); // default 4, configurable from HR portal
 let timeLeft = 2700; // 45 minutes
@@ -388,6 +389,7 @@ function handleProctorViolation(type, message, severity) {
         sessionId,
         name: studentName,
         violations: violationLogs,
+        answers: answers,
     });
     saveCandidateSession();
 
@@ -512,6 +514,7 @@ async function launchExam() {
         correct: 0,
         violations: [],
         endTime: null,
+        answers: answers,
     });
     localStorage.setItem('candidate_status', 'active');
     saveCandidateSession();
@@ -736,6 +739,7 @@ function loadQuestion(index) {
                     answered: answeredCount,
                     correct: liveCorrect,
                     score: liveScore,
+                    answers: answers,
                 });
             });
 
@@ -755,6 +759,27 @@ function loadQuestion(index) {
             } else {
                 updateQuestionStatus(index, 'unvisited');
             }
+
+            // Debounced sync to Firestore
+            clearTimeout(textSyncTimeout);
+            textSyncTimeout = setTimeout(() => {
+                const answeredCount = Object.keys(answers).length;
+                let liveCorrect = 0;
+                activeQuestions.forEach((aq, ai) => {
+                    if (aq.type === 'single' && answers[ai] === aq.answer) liveCorrect++;
+                });
+                const liveScore = answeredCount > 0
+                    ? Math.round((liveCorrect / activeQuestions.filter(aq => aq.type === 'single').length) * 100)
+                    : null;
+                upsertStudent({
+                    sessionId,
+                    name: studentName,
+                    answered: answeredCount,
+                    correct: liveCorrect,
+                    score: liveScore,
+                    answers: answers,
+                });
+            }, 1000);
         });
 
         questionView.options.appendChild(textInput);
@@ -833,6 +858,7 @@ function calculateScore() {
         totalQuestions: activeQuestions.length,
         endTime: new Date().toISOString(),
         violations: violationLogs,
+        answers: answers,
     });
     clearCandidateSession();
     localStorage.setItem('candidate_status', 'completed');
