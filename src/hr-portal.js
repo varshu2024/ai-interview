@@ -214,7 +214,7 @@ function renderStudentsTable() {
         const statusBadge = statusBadgeHtml(s.status);
 
         return `
-            <tr data-session="${s.sessionId}" onclick="toggleViolationDrawer('${s.sessionId}')">
+            <tr data-session="${s.sessionId}" onclick="window.location.href='candidate.html?id=${s.sessionId}'" style="cursor:pointer">
                 <td>
                     <div style="font-weight:600;color:var(--hr-text)">${escHtml(s.name || 'Unknown')}</div>
                     <div style="font-size:0.72rem;color:var(--hr-text-muted);font-family:monospace">${s.sessionId}</div>
@@ -237,13 +237,6 @@ function renderStudentsTable() {
                         ? `<button class="hr-btn hr-btn-success hr-btn-sm" onclick="hrUnblockStudent('${s.sessionId}')">✓ Unblock</button>`
                         : `<button class="hr-btn hr-btn-danger hr-btn-sm" onclick="hrBlockStudent('${s.sessionId}')">🚫 Block</button>`
                     }
-                </td>
-            </tr>
-            <tr id="drawer-${s.sessionId}" class="violation-drawer-row">
-                <td colspan="8" style="padding:0">
-                    <div id="drawer-content-${s.sessionId}" class="violation-drawer ${expandedStudentId === s.sessionId ? 'open' : ''}">
-                        ${buildViolationDrawer(s)}
-                    </div>
                 </td>
             </tr>
         `;
