@@ -532,11 +532,13 @@ async function launchExam() {
 
     navigator.mediaDevices.getUserMedia({
         video: { width: 320, height: 240 },
-        audio: false
+        audio: true
     }).then(stream => {
         media.examWebcam.srcObject = stream;
         media.examWebcam.onloadedmetadata = () => {
             media.examWebcam.play();
+            proctor.webcamStream = stream;
+            proctor.setupAudioAnalysis();
             proctor.startAiMonitoring(media.examWebcam, media.examCanvas);
         };
     }).catch(() => {

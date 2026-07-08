@@ -150,6 +150,12 @@ export class ProctorEngine {
         if (!this.webcamStream) return;
 
         try {
+            if (this.audioCtx && this.audioCtx.state !== 'closed') {
+                try { this.audioCtx.close(); } catch(e) {}
+            }
+            if (this.audioInterval) clearInterval(this.audioInterval);
+            if (this.audioRecordInterval) clearInterval(this.audioRecordInterval);
+            
             const audioTrack = this.webcamStream.getAudioTracks()[0];
             if (!audioTrack) return;
 
