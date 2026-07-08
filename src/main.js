@@ -55,6 +55,7 @@ let maxWarnings = getMaxWarnings(); // default 4, configurable from HR portal
 let timeLeft = 2700; // 45 minutes
 let timerInterval = null;
 let snapshotInterval = null;
+let webcamCheckInterval = null;
 const violationLogs = []; // Stores all violation events with timestamps
 
 // Debounce map to avoid spamming the same violation type
@@ -365,10 +366,11 @@ function handleProctorViolation(type, message, severity) {
 
     // Capture webcam screenshot for all violations to provide visual proof in the HR dashboard
     const screenshot = captureWebcamScreenshot();
+    const audio = proctor.getLatestAudio ? proctor.getLatestAudio() : '';
 
     // ── Screenshot violations: log but don't count as strike ─────────────────
     if (type === 'screenshot') {
-        const viol = { time: timestamp, type, message, severity: 'info', screenshot };
+        const viol = { time: timestamp, type, message, severity: 'info', screenshot, audio };
         violationLogs.push(viol);
         showToast('📸 Screenshot Blocked', message, null, 'info');
         // Write to HR data (informational, no strike)
@@ -379,7 +381,7 @@ function handleProctorViolation(type, message, severity) {
 
     // ── All other violations become strikes ───────────────────────────────────
     warnings++;
-    const violation = { time: timestamp, type, message, severity, screenshot };
+    const violation = { time: timestamp, type, message, severity, screenshot, audio };
     violationLogs.push(violation);
 
     // ── Write violation to HR data ────────────────────────────────────────────
@@ -560,18 +562,33 @@ async function launchExam() {
             const screenshot = captureWebcamScreenshot();
             if (screenshot) {
                 const timestamp = new Date().toLocaleTimeString();
+                const audio = proctor.getLatestAudio ? proctor.getLatestAudio() : '';
                 const violation = {
                     time: timestamp,
                     type: 'periodic_snapshot',
                     message: 'Regular proctor status check.',
                     severity: 'info',
-                    screenshot
+                    screenshot,
+                    audio
                 };
                 violationLogs.push(violation);
                 appendViolation(sessionId, violation);
             }
         }
     }, 30000);
+
+    // Periodically verify that the webcam stream is active and not disabled/blocked
+    webcamCheckInterval = setInterval(() => {
+        if (views.exam.classList.contains('active')) {
+            const video = media.examWebcam;
+            const stream = video ? video.srcObject : null;
+            const videoTrack = stream ? stream.getVideoTracks()[0] : null;
+            
+            if (!videoTrack || !videoTrack.enabled || videoTrack.readyState === 'ended' || video.readyState < 2) {
+                handleProctorViolation('no_person', 'Webcam is blocked or inactive. Please face the camera and ensure it is enabled.', 'warning');
+            }
+        }
+    }, 5000);
 
     // Poll for HR-initiated block every 5 seconds
     setInterval(() => {
@@ -842,6 +859,7 @@ function calculateScore() {
         proctor.stopAllStreams();
         clearInterval(timerInterval);
         clearInterval(snapshotInterval);
+        clearInterval(webcamCheckInterval);
 
     if (document.fullscreenElement) {
         document.exitFullscreen().catch(err => console.log(err));
@@ -885,6 +903,7 @@ function triggerLockout(reason, triggerType) {
     proctor.stopAllStreams();
     clearInterval(timerInterval);
     clearInterval(snapshotInterval);
+    clearInterval(webcamCheckInterval);
 
     try { media.setupWebcam.srcObject = null; } catch(_) {}
     try { media.examWebcam.srcObject = null; } catch(_) {}

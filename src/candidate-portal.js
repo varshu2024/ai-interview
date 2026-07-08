@@ -17,7 +17,10 @@ const VIOLATION_LABELS = {
     window_blur: '🖥️ Window Unfocused',
     mouse_leave: '🖱️ Cursor Out of Page',
     fullscreen_exit: '🖥️ Fullscreen Exited',
+    noise: '🔊 Loud Vocal Noise',
     noise_detected: '🔊 Loud Vocal Noise',
+    no_person: '👤 Face Not Visible',
+    multiple_people: '👥 Multiple People',
     gaze_away: '👁️ Gaze Away (Left/Right)',
     gaze_down: '👁️ Looking Down Gaze',
     cell_phone: '📱 Mobile Phone Detected',
@@ -234,6 +237,12 @@ function renderTimelineLog(student) {
             badgeStyle = 'background: #fef3c7; color: #b45309; border: 1px solid #fde68a;';
         }
 
+        const audioPlayerHtml = v.audio
+            ? `<div class="timeline-audio" style="margin-top: 0.5rem; max-width: 240px; border-radius: 6px; overflow: hidden; border: 1px solid #e2e8f0; background: #f8fafc; padding: 4px;">
+                <audio src="${v.audio}" controls style="width: 100%; height: 28px; display: block;"></audio>
+               </div>`
+            : '';
+
         return `
             <li class="${typeClass}">
                 <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.25rem;">
@@ -241,6 +250,7 @@ function renderTimelineLog(student) {
                     <span class="timeline-type" style="${badgeStyle}">${VIOLATION_LABELS[v.type] || v.type}</span>
                 </div>
                 <div class="timeline-message">${escHtml(v.message || '')}</div>
+                ${audioPlayerHtml}
             </li>
         `;
     }).join('');
@@ -290,6 +300,11 @@ function renderTimelineLog(student) {
                             <div style="font-size: 0.68rem; font-family: monospace; color: #64748b; margin-top: 0.1rem;">
                                 🕐 ${v.time || '—'}
                             </div>
+                            ${v.audio ? `
+                            <div style="margin-top: 0.4rem; padding-top: 0.4rem; border-top: 1px solid #e2e8f0;">
+                                <audio src="${v.audio}" controls style="width: 100%; height: 26px; display: block;"></audio>
+                            </div>
+                            ` : ''}
                         </div>
                     </div>
                 `).join('')}

@@ -239,6 +239,20 @@ export async function uploadScreenshot(studentId, base64Data) {
     }
 }
 
+export async function uploadAudio(studentId, base64Data) {
+    if (!base64Data || !base64Data.startsWith('data:')) {
+        return base64Data || '';
+    }
+    try {
+        const storageRef = ref(storage, `audio/${studentId}/${Date.now()}.webm`);
+        const uploadResult = await uploadString(storageRef, base64Data, 'data_url');
+        return await getDownloadURL(uploadResult.ref);
+    } catch (e) {
+        console.error("Firebase Storage audio upload failed, falling back to base64 inline data:", e);
+        return base64Data;
+    }
+}
+
 function getWarningCountForStudent(sessionId) {
     const student = getStudent(sessionId);
     return student && student.violations ? student.violations.length : 0;
@@ -297,12 +311,14 @@ export async function syncViolationToRemote(sessionId, violation) {
         
         // 1. Upload screenshot to Firebase Storage
         const screenshotUrl = await uploadScreenshot(sessionId, violation.screenshot || '');
+        const audioUrl = await uploadAudio(sessionId, violation.audio || '');
         
         // 2. Save violation record in Firestore
         await addDoc(collection(db, "violations"), {
             studentId: sessionId,
             violationType: violation.type || '',
             screenshot: screenshotUrl,
+            audio: audioUrl,
             timestamp: new Date().toISOString(),
             warningCount: warningCount
         });
@@ -362,7 +378,8 @@ export async function syncAllFromRemote() {
                     message: `Violation detected: ${v.violationType}`,
                     time: v.timestamp ? new Date(v.timestamp).toLocaleTimeString() : '',
                     severity: v.violationType === 'cell_phone' ? 'critical' : 'warning',
-                    screenshot: v.screenshot || ''
+                    screenshot: v.screenshot || '',
+                    audio: v.audio || ''
                 }));
 
             return {
@@ -472,7 +489,8 @@ export function subscribeToStudents(callback) {
                     message: `Violation detected: ${v.violationType}`,
                     time: v.timestamp ? new Date(v.timestamp).toLocaleTimeString() : '',
                     severity: v.violationType === 'cell_phone' ? 'critical' : 'warning',
-                    screenshot: v.screenshot || ''
+                    screenshot: v.screenshot || '',
+                    audio: v.audio || ''
                 }));
 
             return {

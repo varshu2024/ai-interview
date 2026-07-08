@@ -20,6 +20,10 @@ export class ProctorEngine {
         this.audioCtx = null;
         this.analyser = null;
         this.audioInterval = null;
+        this.mediaRecorder = null;
+        this.audioChunks = [];
+        this.audioRecordInterval = null;
+        this.latestAudioDataUrl = null;
 
         // AI model
         this.cocoModel = null;
@@ -184,6 +188,60 @@ export class ProctorEngine {
                     highVolumeDuration = Math.max(0, highVolumeDuration - 200);
                 }
             }, 200);
+
+            // Setup MediaRecorder for rolling audio snippets
+            if (typeof MediaRecorder !== 'undefined') {
+                const audioStream = new MediaStream([audioTrack]);
+                let recorderOptions = {};
+                if (MediaRecorder.isTypeSupported('audio/webm')) {
+                    recorderOptions = { mimeType: 'audio/webm', audioBitsPerSecond: 16000 };
+                } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+                    recorderOptions = { mimeType: 'audio/mp4', audioBitsPerSecond: 16000 };
+                } else {
+                    recorderOptions = { audioBitsPerSecond: 16000 };
+                }
+                
+                try {
+                    this.mediaRecorder = new MediaRecorder(audioStream, recorderOptions);
+                    this.audioChunks = [];
+                    
+                    this.mediaRecorder.ondataavailable = (event) => {
+                        if (event.data && event.data.size > 0) {
+                            this.audioChunks.push(event.data);
+                        }
+                    };
+                    
+                    this.mediaRecorder.onstop = () => {
+                        const blob = new Blob(this.audioChunks, { type: this.mediaRecorder.mimeType || 'audio/webm' });
+                        this.audioChunks = [];
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            this.latestAudioDataUrl = reader.result;
+                        };
+                        reader.readAsDataURL(blob);
+                    };
+                    
+                    this.mediaRecorder.start();
+                    
+                    // Segment the audio into 5-second rolling chunks
+                    this.audioRecordInterval = setInterval(() => {
+                        if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+                            this.mediaRecorder.stop();
+                            setTimeout(() => {
+                                if (this.mediaRecorder && this.webcamStream && this.webcamStream.active) {
+                                    try {
+                                        this.mediaRecorder.start();
+                                    } catch (err) {
+                                        console.error("Error restarting MediaRecorder:", err);
+                                    }
+                                }
+                            }, 50);
+                        }
+                    }, 5000);
+                } catch (e) {
+                    console.error("Failed to initialize MediaRecorder:", e);
+                }
+            }
 
         } catch (error) {
             console.error("Audio analyser initialization failed: ", error);
@@ -560,6 +618,10 @@ export class ProctorEngine {
         return false;
     }
 
+    getLatestAudio() {
+        return this.latestAudioDataUrl || '';
+    }
+
     /* ================= CLEANUP AND SHUTDOWN ================= */
 
     stopAllStreams() {
@@ -568,7 +630,15 @@ export class ProctorEngine {
         this.isAiRunning = false;
         if (this.aiInterval) clearTimeout(this.aiInterval);
         if (this.audioInterval) clearInterval(this.audioInterval);
+        if (this.audioRecordInterval) clearInterval(this.audioRecordInterval);
         if (this.gazeInterval) clearInterval(this.gazeInterval);
+
+        if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+            try {
+                this.mediaRecorder.stop();
+            } catch (e) {}
+        }
+        this.mediaRecorder = null;
 
         this.stopWebcamStream();
         this.stopScreenStream();
@@ -579,6 +649,17 @@ export class ProctorEngine {
     }
 
     stopWebcamStream() {
+        if (this.audioRecordInterval) {
+            clearInterval(this.audioRecordInterval);
+            this.audioRecordInterval = null;
+        }
+        if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+            try {
+                this.mediaRecorder.stop();
+            } catch (e) {}
+        }
+        this.mediaRecorder = null;
+
         if (this.webcamStream) {
             this.webcamStream.getTracks().forEach(track => track.stop());
             this.webcamStream = null;

@@ -308,6 +308,11 @@ function buildViolationDrawer(student) {
                 <img src="${v.screenshot}" alt="Violation Capture" style="width: 100%; display: block; filter: contrast(1.05);" />
                </div>`
             : '';
+        const audioHtml = v.audio
+            ? `<div class="v-audio-wrap" style="margin-top: 0.5rem; max-width: 240px; border-radius: 8px; overflow: hidden; border: 1.5px solid rgba(255,255,255,0.08); box-shadow: 0 4px 12px rgba(0,0,0,0.3); background: #f1f5f9; padding: 6px;">
+                <audio src="${v.audio}" controls style="width: 100%; height: 32px; display: block;"></audio>
+               </div>`
+            : '';
         return `
             <li style="margin-bottom: 1.25rem; list-style: none;">
                 <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
@@ -316,6 +321,7 @@ function buildViolationDrawer(student) {
                     <span class="v-msg" style="color: var(--hr-text-secondary);">${escHtml(v.message || '')}</span>
                 </div>
                 ${screenshotHtml}
+                ${audioHtml}
             </li>
         `;
     }).join('');
